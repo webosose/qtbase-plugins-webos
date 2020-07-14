@@ -17,4 +17,4 @@
 TEMPLATE = subdirs
 
 CONFIG += ordered
-SUBDIRS += deviceintegration
+SUBDIRS += deviceintegration eglfs_webos-plugin.pro
