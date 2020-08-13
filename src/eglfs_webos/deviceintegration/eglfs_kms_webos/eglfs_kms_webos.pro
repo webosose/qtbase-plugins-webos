@@ -21,7 +21,7 @@ PLUGIN_CLASS_NAME = WebOSEglFSKmsGbmIntegrationPlugin
 
 load(qt_plugin)
 
-QT += eglfs_kms_gbm_support-private eglfsdeviceintegration-private eglfs_kms_support-private kms_support-private
+QT += eglfs_kms_gbm_support-private eglfsdeviceintegration-private eglfs_kms_support-private kms_support-private edid_support-private
 
 QMAKE_USE += gbm drm
 
@@ -29,6 +29,10 @@ CONFIG += egl
 
 # Avoid X11 header collision, use generic EGL native types
 DEFINES += QT_EGL_NO_X11
+
+plane_composition {
+    DEFINES += PLANE_COMPOSITION
+}
 
 SOURCES += $$PWD/weboseglfskmsgbmmain.cpp \
            $$PWD/weboseglfskmsgbmintegration.cpp

@@ -17,8 +17,22 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonArray>
+#include <QScreen>
+#include <QWindow>
+
+#include <QtDeviceDiscoverySupport/private/qdevicediscovery_p.h>
+#include <qpa/qplatformwindow.h>
 
 #include "weboseglfskmsgbmintegration.h"
+
+#ifdef PLANE_COMPOSITION
+#include <gbm.h>
+#if QT_CONFIG(egl_protected)
+#include <gbm_priv.h>
+#endif
+#endif
+
+static QMutex s_frameBufferMutex;
 
 WebOSKmsScreenConfig::WebOSKmsScreenConfig(QJsonObject config)
     : QKmsScreenConfig()
@@ -80,3 +94,371 @@ QKmsScreenConfig *WebOSEglFSKmsGbmIntegration::createScreenConfig()
 
     return screenConfig;
 }
+
+#ifdef PLANE_COMPOSITION
+void WebOSEglFSKmsGbmIntegration::screenInit()
+{
+    QEglFSKmsGbmIntegration::screenInit();
+
+    static_cast<WebOSEglFSKmsGbmDevice *>(m_device)->addPlaneProperties();
+}
+
+QKmsDevice *WebOSEglFSKmsGbmIntegration::createDevice()
+{
+    QString path = screenConfig()->devicePath();
+    if (!path.isEmpty()) {
+        qDebug() << "GBM: Using DRM device" << path << "specified in config file";
+    } else {
+        QDeviceDiscovery *d = QDeviceDiscovery::create(QDeviceDiscovery::Device_VideoMask);
+        const QStringList devices = d->scanConnectedDevices();
+        qDebug() << "Found the following video devices:" << devices;
+        d->deleteLater();
+
+        if (Q_UNLIKELY(devices.isEmpty()))
+            qFatal("Could not find DRM device!");
+
+        path = devices.first();
+        qDebug() << "Using" << path;
+    }
+
+    return new WebOSEglFSKmsGbmDevice(screenConfig(), path);
+}
+
+void WebOSEglFSKmsGbmIntegration::setOverlayBufferObject(const QScreen *screen, void *bo, QRectF rect, uint32_t zpos)
+{
+    if (!screen || !screen->handle())
+        return;
+
+    auto *gbmScreen = static_cast<WebOSEglFSKmsGbmScreen *>(screen->handle());
+    gbmScreen->setOverlayBufferObject(bo, rect, zpos);
+}
+
+QFunctionPointer WebOSEglFSKmsGbmIntegration::platformFunction(const QByteArray &function) const
+{
+    if (function == "setOverlayBufferObject")
+        return QFunctionPointer(setOverlayBufferObject);
+
+    return nullptr;
+}
+
+void *WebOSEglFSKmsGbmIntegration::nativeResourceForIntegration(const QByteArray &name)
+{
+    if (name == QByteArrayLiteral("gbm_device") && m_device)
+        return (void *) static_cast<QEglFSKmsGbmDevice *>(m_device)->gbmDevice();
+
+    return QEglFSKmsIntegration::nativeResourceForIntegration(name);
+}
+
+void WebOSEglFSKmsGbmDevice::addPlaneProperties()
+{
+    for (QKmsPlane &plane : m_planes) {
+        drmModeObjectPropertiesPtr objProps = drmModeObjectGetProperties(m_dri_fd, plane.id, DRM_MODE_OBJECT_PLANE);
+        if (!objProps) {
+            qDebug("Failed to query plane %d object properties, ignoring", plane.id);
+            continue;
+        }
+
+        WebOSKmsPlane &webosPlane = m_webosPlanes[plane.id];
+        enumerateProperties(objProps, [&webosPlane, &plane](drmModePropertyPtr prop, quint64 value) {
+            if (!strcasecmp(prop->name, "blend_op")) {
+                webosPlane.blendPropertyId = prop->prop_id;
+            }
+        });
+
+        drmModeFreeObjectProperties(objProps);
+    }
+}
+
+static inline void assignPlane(QKmsOutput *output, QKmsPlane *plane)
+{
+     plane->activeCrtcId = output->crtc_id;
+     output->eglfs_plane = plane;
+     qDebug() << "assign main plane" << plane->id << "to" << output->name;
+}
+
+void WebOSEglFSKmsGbmDevice::assignPlanes(const QKmsOutput &output)
+{
+    auto userConfig = m_screenConfig->outputSettings();
+    QVariantMap userConnectorConfig = userConfig.value(output.name);
+
+    qInfo() << "Try assignPlanes" << userConnectorConfig.value(QStringLiteral("useMultiPlanes")).toBool() << userConnectorConfig;
+
+    if (!userConnectorConfig.value(QStringLiteral("useMultiPlanes")).toBool())
+        return;
+
+    // Unset main plane which is assigned from QPA
+    if (output.eglfs_plane) {
+        QKmsOutput *op = const_cast<QKmsOutput *>(&output);
+        op->eglfs_plane->activeCrtcId = 0;
+        op->eglfs_plane = 0;
+    }
+
+    for (QKmsPlane &plane : m_planes) {
+        if (!(plane.possibleCrtcs & (1 << output.crtc_index)))
+            continue;
+
+        if (plane.activeCrtcId)
+            continue;
+
+        if (!output.eglfs_plane && plane.type == QKmsPlane::OverlayPlane) {
+            assignPlane(const_cast<QKmsOutput *>(&output), &plane);
+            continue;
+        }
+
+        if (plane.type == QKmsPlane::OverlayPlane)
+            continue;
+
+        // 1:1 map from KmsOuput to WebOSKmsOutput
+        WebOSKmsOutput &webosOutput = m_webosOutputs[output.connector_id];
+
+        // Fully assigned except MainPlane
+        if (webosOutput.m_assignedPlanes.size() == Plane_End - 1)
+            continue;
+
+        for (int p = 0; p < Plane_End; p++) {
+            if (p == MainPlane)
+                continue;
+            if (webosOutput.m_assignedPlanes.contains(p))
+                continue;
+
+            qInfo() << "assign plane" << plane.id << "for zpos" << p << output.name;
+
+            plane.activeCrtcId = output.crtc_id;
+            webosOutput.m_assignedPlanes[p] = plane;
+            break;
+        }
+    }
+}
+
+QPlatformScreen * WebOSEglFSKmsGbmDevice::createScreen(const QKmsOutput &output)
+{
+    QEglFSKmsGbmScreen *screen = new WebOSEglFSKmsGbmScreen(this, output, false);
+
+    assignPlanes(screen->output());
+    createGlobalCursor(screen);
+
+    return screen;
+}
+
+WebOSEglFSKmsGbmScreen::WebOSEglFSKmsGbmScreen(QEglFSKmsDevice *device, const QKmsOutput &output, bool headless)
+    : QEglFSKmsGbmScreen(device, output, headless)
+{
+    m_bufferObjects.resize(Plane_End);
+    m_nextBufferObjects.resize(Plane_End);
+    m_currentBufferObjects.resize(Plane_End);
+}
+
+uint32_t WebOSEglFSKmsGbmScreen::framebufferForOverlayBufferObject(gbm_bo *bo)
+{
+    struct gbm_import_fd_data import_fd_data;
+    generic_buf_layout_t buf_layout;
+    uint32_t alignedWidth = 0;
+    uint32_t alignedHeight = 0;
+    uint32_t stride[4] = { 0 };
+    uint32_t offset[4] = { 0 };
+    uint32_t ubwc_status = 0;
+
+    gbm_perform(GBM_PERFORM_GET_BO_ALIGNED_WIDTH, bo, &alignedWidth);
+    gbm_perform(GBM_PERFORM_GET_BO_ALIGNED_HEIGHT, bo, &alignedHeight);
+    gbm_perform(GBM_PERFORM_GET_UBWC_STATUS, bo, &ubwc_status);
+
+    import_fd_data.fd = gbm_bo_get_fd(bo);
+    import_fd_data.format = gbm_bo_get_format(bo);
+
+    int ret = gbm_perform(GBM_PERFORM_GET_PLANE_INFO, bo, &buf_layout);
+    if (ret == GBM_ERROR_NONE) {
+        for(int j=0; j< buf_layout.num_planes; j++) {
+            offset[j] = buf_layout.planes[j].offset;
+            stride[j] = buf_layout.planes[j].v_increment;
+        }
+    }
+
+    qDebug() << bo << gbm_bo_get_fd(bo) << alignedWidth << alignedHeight << "format" << import_fd_data.format << "NV12" << GBM_FORMAT_NV12 << ubwc_status;
+    qDebug() << "buf layout" << "v_increment" << buf_layout.planes[0].v_increment << "num_plane" << buf_layout.num_planes;
+
+    // The gem_handle should not be closed by another screen
+    // Cover mirroring case when same gem handle is used across the screens
+    QMutexLocker lock(&s_frameBufferMutex);
+
+    uint32_t gem_handle = 0;
+    ret = drmPrimeFDToHandle(device()->fd(), import_fd_data.fd, &gem_handle);
+    if (ret) {
+        qWarning() << "Failed to drmPrimeFDToHandle" << device()->fd() << import_fd_data.fd;
+        return 0;
+    }
+
+    struct drm_mode_fb_cmd2 cmd2 {};
+    cmd2.width = alignedWidth;
+    cmd2.height = alignedHeight;
+    cmd2.pixel_format = import_fd_data.format;
+    cmd2.flags = DRM_MODE_FB_MODIFIERS;
+
+    for (int i = 0; i < buf_layout.num_planes; i++) {
+        cmd2.handles[i] = gem_handle;
+        cmd2.pitches[i] = buf_layout.planes[0].v_increment;
+        cmd2.offsets[i] = 0;
+        cmd2.modifier[i] = ubwc_status == 0 ? 0 : DRM_FORMAT_MOD_QCOM_COMPRESSED;
+    }
+
+    // In ubwc case, the offsets[0] is non-zero.
+    if (import_fd_data.format == GBM_FORMAT_NV12) {
+        cmd2.pitches[0] = buf_layout.planes[0].v_increment;
+        cmd2.pitches[1] = cmd2.pitches[0];
+        cmd2.offsets[0] = 0;
+        cmd2.offsets[1] = cmd2.pitches[0] * cmd2.height;
+    }
+
+    if ((ret = drmIoctl(device()->fd(), DRM_IOCTL_MODE_ADDFB2, &cmd2))) {
+        qWarning() << "Failed to DRM_IOCTL_MODE_ADDFB2" << bo << gem_handle;
+        return 0;
+    }
+
+    uint32_t fb = cmd2.fb_id;
+
+    struct drm_gem_close gem_close = {};
+    gem_close.handle = gem_handle;
+    if (drmIoctl(device()->fd(), DRM_IOCTL_GEM_CLOSE, &gem_close)) {
+        qWarning() << "Failed to DRM_IOCTL_GEM_CLOSE" << bo << gem_handle;
+        return 0;
+    }
+
+    qDebug("framebufferForOverlayBufferObject fb: %u gem_handle %u", fb, gem_handle);
+
+    return fb;
+}
+
+void WebOSEglFSKmsGbmScreen::updateFlipStatus()
+{
+    QEglFSKmsGbmScreen::updateFlipStatus();
+
+    for (int p = 0; p < Plane_End; p++) {
+        // The main plane will be handled in QEglFSKmsGbmScreen
+        if (p == MainPlane)
+            continue;
+        struct BufferObject current = m_currentBufferObjects[p];
+
+        if (current.gbo && m_nextBufferObjects[p].updated) {
+            gbm_device *device = gbm_bo_get_device(current.gbo);
+            drmModeRmFB(gbm_device_get_fd(device), current.fb);
+            qDebug() << "destroy current bo" << current.gbo;
+            gbm_bo_destroy(current.gbo);
+        }
+
+        m_currentBufferObjects[p] = m_nextBufferObjects[p];
+        m_nextBufferObjects[p].updated = false;
+    }
+}
+
+void WebOSEglFSKmsGbmScreen::flip()
+{
+    QKmsOutput &op(output());
+    WebOSEglFSKmsGbmDevice *wd = static_cast<WebOSEglFSKmsGbmDevice *>(device());
+    WebOSKmsOutput &webosOutput = wd->getOutput(op);
+
+    if (device()->hasAtomicSupport()) {
+#if QT_CONFIG(drm_atomic)
+        drmModeAtomicReq *request = device()->threadLocalAtomicRequest();
+
+        for (int p = 0; p < Plane_End; p++) {
+            // The main plane will be flipped in QEglFSKmsGbmScreen::flip
+            // Do some additional command for webos
+            if (p == MainPlane) {
+                WebOSKmsPlane &wPlane = wd->getPlane(*op.eglfs_plane);
+                drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->zposPropertyId, p);
+                //Additional Properties
+                drmModeAtomicAddProperty(request, op.eglfs_plane->id, wPlane.blendPropertyId, 2);
+                continue;
+            }
+
+            if (!webosOutput.m_assignedPlanes.contains(p))
+                continue;
+
+            QKmsPlane &plane = webosOutput.m_assignedPlanes[p];
+            WebOSKmsPlane &wPlane = wd->getPlane(plane);
+
+            //In rendering thread - which access to m_bufferObjects
+            QMutexLocker lock(&m_bufferObjectMutex);
+            if (!m_bufferObjects[p].updated) {
+                lock.unlock();
+                continue;
+            }
+
+            BufferObject bo = m_bufferObjects[p];
+            m_bufferObjects[p].updated = false;
+            lock.unlock();
+
+            m_nextBufferObjects[p] = bo;
+
+            if (!bo.gbo) {
+                //clear overlay plane
+                qDebug() << op.name << "clear overlay" << "plane" << plane.id << "zpos" << p;
+                drmModeAtomicAddProperty(request, plane.id, plane.framebufferPropertyId, 0);
+                drmModeAtomicAddProperty(request, plane.id, plane.crtcPropertyId, 0);
+                continue;
+            }
+
+            //To update flip status
+            qDebug("render buffer object to bo %u with %p", p, bo.gbo);
+
+            // Can be null to mean clear overlay plane
+            bo.fb = framebufferForOverlayBufferObject(bo.gbo);
+
+            uint32_t sw = gbm_bo_get_width(bo.gbo);
+            uint32_t sh = gbm_bo_get_height(bo.gbo);
+
+            qDebug() << "overlay" << plane.id << "source" << sw << sh << "dest" << bo.rect;
+            drmModeAtomicAddProperty(request, plane.id, plane.framebufferPropertyId, bo.fb);
+            drmModeAtomicAddProperty(request, plane.id, plane.crtcPropertyId, op.crtc_id);
+            drmModeAtomicAddProperty(request, plane.id, plane.srcXPropertyId, 0);
+            drmModeAtomicAddProperty(request, plane.id, plane.srcYPropertyId, 0);
+            drmModeAtomicAddProperty(request, plane.id, plane.srcwidthPropertyId, sw << 16);
+            drmModeAtomicAddProperty(request, plane.id, plane.srcheightPropertyId, sh << 16);
+            drmModeAtomicAddProperty(request, plane.id, plane.crtcXPropertyId, bo.rect.x());
+            drmModeAtomicAddProperty(request, plane.id, plane.crtcYPropertyId, bo.rect.y());
+            drmModeAtomicAddProperty(request, plane.id, plane.crtcwidthPropertyId, bo.rect.width());
+            drmModeAtomicAddProperty(request, plane.id, plane.crtcheightPropertyId, bo.rect.height());
+            drmModeAtomicAddProperty(request, plane.id, plane.zposPropertyId, p);
+            //Additional Properties
+            drmModeAtomicAddProperty(request, plane.id, wPlane.blendPropertyId, 2);
+
+#if QT_CONFIG(egl_protected)
+            int secured = 0;
+            gbm_perform(GBM_PERFORM_GET_SECURE_BUFFER_STATUS, bo.gbo, &secured);
+            if (secured) {
+                qDebug() << "overlay bo" << bo.gbo << "secured";
+                drmModeAtomicAddProperty(request, plane.id, plane.fbTranslationModeId, plane.secureMode);
+            }
+#endif
+        }
+#endif
+    }
+
+    QEglFSKmsGbmScreen::flip();
+}
+
+void WebOSEglFSKmsGbmScreen::setOverlayBufferObject(void *bo, QRectF rect, uint32_t zpos)
+{
+    QKmsOutput &op(output());
+    WebOSEglFSKmsGbmDevice *wd = static_cast<WebOSEglFSKmsGbmDevice *>(device());
+    WebOSKmsOutput &webosOutput = wd->getOutput(op);
+
+    if (!webosOutput.m_assignedPlanes.contains(zpos)) {
+        qWarning() << "WebOSEglFSKmsGbmScreen::setOverlayBufferObject - no plane for" << zpos << "bo" << bo;
+        gbm_bo_destroy((gbm_bo *)bo);
+        return;
+    }
+
+    qDebug() << "QEglFSKmsGbmScreen::setOverlayPlaneFramebuffer:" << bo << name() << rect << zpos;
+
+    // In GUI thread
+    QMutexLocker lock(&m_bufferObjectMutex);
+
+    if (m_bufferObjects[zpos].updated) {
+        gbm_bo *old_bo = m_bufferObjects[zpos].gbo;
+        qDebug() << "destroy old bo" << old_bo;
+        gbm_bo_destroy(old_bo);
+    }
+
+    m_bufferObjects[zpos] = BufferObject((gbm_bo *)bo, rect, true);
+}
+#endif
