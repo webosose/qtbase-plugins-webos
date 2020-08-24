@@ -24,6 +24,11 @@
 #include "webosdevicediscovery_udev_sorted_p.h"
 #include "weboseglfsintegration.h"
 
+#if defined(EMULATOR)
+#include "qinputdevicescanner.h"
+#include "qemulatorkeyboardmanager.h"
+#endif
+
 QString WebOSOutputMapping::screenNameForDeviceNode(const QString &deviceNode)
 {
     QWindow *window =  m_mapping.value(deviceNode);
@@ -98,6 +103,31 @@ QString WebOSEglFSIntegration::initializeDevices(QStringList devices)
     return devices.join(QLatin1Char(':'));
 }
 
+#if defined(EMULATOR)
+void WebOSEglFSIntegration::createInputHandlers()
+{
+    QInputDeviceScanner *scanner = new QInputDeviceScanner();
+    scanner->scan();
+    for (int i = 0; i < scanner->getNumOfMouses(); i++) {
+        qDebug() << "MouseName:" << scanner->getMouseName(i);
+    }
+    for (int i = 0; i < scanner->getNumOfKeyboards(); i++) {
+        qDebug() << "KbdName:" << scanner->getKeyboardName(i);
+    }
+    /* Use our own QInputDeviceScanner to locate keyboards, if none are found, fall back
+     * to the default QEvdevKeyboardManager methodology in Qt (by sending in a blank string)
+     */
+    QString keyboardDevices = "";
+    for (int k = 0; k < scanner->getNumOfKeyboards(); k++) {
+        keyboardDevices.append(":" + scanner->getKeyboardName(k));
+    }
+    m_emulatorKeyboardManager = new QEmulatorKeyboardManager(QLatin1String("EvdevKeyboard"), QString() /* spec */, this);
+    m_emulatorMouseManager = new QEmulatorMouseManager(QLatin1String("EvdevMouse"), QString("abs") /* spec */, this);
+    if ((m_emulatorKeyboardManager) && (m_emulatorMouseManager)) {
+        connect(m_emulatorKeyboardManager, &QEmulatorKeyboardManager::handleKeycodeSignal, m_emulatorMouseManager, &QEmulatorMouseManager::handleKeycodeSlot);
+    }
+}
+#else
 void WebOSEglFSIntegration::createInputHandlers()
 {
     QOutputMapping::set(&m_mappingHelper);
@@ -238,6 +268,7 @@ void WebOSEglFSIntegration::updateWindowMapping()
     arrangeTouchDevices();
     arrangeKbdDevices();
 }
+#endif
 
 void WebOSEglFSIntegration::prepareOutputMapping(const QStringList &devices)
 {

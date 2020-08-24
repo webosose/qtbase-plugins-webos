@@ -32,6 +32,12 @@
 
 #include <QtInputSupport/private/qoutputmapping_p.h>
 
+#if defined(EMULATOR)
+#include "qlinuxmouse.h"
+#include "qemulatorkeyboardmanager.h"
+#include "qemulatormousemanager.h"
+#endif
+
 class WebOSOutputMapping : public QOutputMapping
 {
 public:
@@ -52,7 +58,6 @@ class WebOSEglFSIntegration : public QEglFSIntegration
 public:
     WebOSEglFSIntegration();
     void createInputHandlers() override;
-    QPlatformWindow *createPlatformWindow(QWindow *window) const override;
 
     QString initializeDevices(QStringList devices);
     void prepareOutputMapping(const QStringList &devices);
@@ -61,6 +66,8 @@ public:
     void removeTouchDevice(const QString &deviceNode);
     void arrangeKbdDevices();
     void removeKbdDevice(const QString &deviceNode);
+#if not defined(EMULATOR)
+    QPlatformWindow *createPlatformWindow(QWindow *window) const override;
 
 public slots:
     void updateWindowMapping();
@@ -69,6 +76,7 @@ public slots:
 
 signals:
     void platformWindowCreated(QWindow *) const;
+#endif
 
 private:
     QVector<QWindow *> m_windows;
@@ -88,6 +96,10 @@ private:
     bool m_dummyTouchDevice = false;
     bool m_dummyKbdDevice = false;
     QMap<QString, QVariantMap> m_outputSettings;
+#if defined(EMULATOR)
+    QEmulatorKeyboardManager* m_emulatorKeyboardManager;
+    QEmulatorMouseManager* m_emulatorMouseManager;
+#endif
 };
 
 #endif

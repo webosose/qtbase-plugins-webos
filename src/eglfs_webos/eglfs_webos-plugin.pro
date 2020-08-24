@@ -37,3 +37,8 @@ HEADERS += $$PWD/weboseglfsintegration.h \
            $$PWD/webosdevicediscovery_udev_sorted_p.h
 
 OTHER_FILES += $$PWD/eglfs_webos.json
+
+emulator {
+    DEFINES += EMULATOR
+    include($$PWD/emulator/emulator.pri)
+}
