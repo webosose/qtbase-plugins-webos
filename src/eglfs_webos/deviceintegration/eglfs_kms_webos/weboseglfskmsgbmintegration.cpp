@@ -34,6 +34,8 @@
 
 static QMutex s_frameBufferMutex;
 
+static void(*page_flip_notifier)(void* key) = nullptr;
+
 WebOSKmsScreenConfig::WebOSKmsScreenConfig(QJsonObject config)
     : QKmsScreenConfig()
     , m_configJson(config)
@@ -145,6 +147,10 @@ void *WebOSEglFSKmsGbmIntegration::nativeResourceForIntegration(const QByteArray
 {
     if (name == QByteArrayLiteral("gbm_device") && m_device)
         return (void *) static_cast<QEglFSKmsGbmDevice *>(m_device)->gbmDevice();
+
+    if (name == QByteArrayLiteral("dri_address_of_page_flip_notifier") && m_device)
+        // return pointer to function "page_flip_notifier"
+        return (void*)&page_flip_notifier;
 
     return QEglFSKmsIntegration::nativeResourceForIntegration(name);
 }
@@ -329,6 +335,9 @@ uint32_t WebOSEglFSKmsGbmScreen::framebufferForOverlayBufferObject(gbm_bo *bo)
 
 void WebOSEglFSKmsGbmScreen::updateFlipStatus()
 {
+    if (page_flip_notifier)
+            (*page_flip_notifier)(this);
+
     QEglFSKmsGbmScreen::updateFlipStatus();
 
     for (int p = 0; p < Plane_End; p++) {
