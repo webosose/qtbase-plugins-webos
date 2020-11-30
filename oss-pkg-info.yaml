@@ -1,0 +1,4 @@
+Open Source Software Package:
+- name: webOSOSE-qtbase-plugins-webos
+  source: https://github.com/webosose/qtbase-plugins-webos
+  license: Apache-2.0
