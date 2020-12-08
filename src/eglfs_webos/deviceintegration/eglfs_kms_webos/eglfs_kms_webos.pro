@@ -1,4 +1,4 @@
-# Copyright (c) 2020 LG Electronics, Inc.
+# Copyright (c) 2020-2021 LG Electronics, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,7 +21,13 @@ PLUGIN_CLASS_NAME = WebOSEglFSKmsGbmIntegrationPlugin
 
 load(qt_plugin)
 
-QT += eglfs_kms_gbm_support-private eglfsdeviceintegration-private eglfs_kms_support-private kms_support-private edid_support-private
+QT += eglfs_kms_gbm_support-private eglfsdeviceintegration-private eglfs_kms_support-private kms_support-private devicediscovery_support-private
+equals(QT_MAJOR_VERSION, 5) {
+    QT += edid_support-private
+} else {
+    QT += devicediscovery_support-private
+    QMAKE_INCDIR_DRM = $$[QT_SYSROOT]/usr/include/libdrm
+}
 
 QMAKE_USE += gbm drm
 

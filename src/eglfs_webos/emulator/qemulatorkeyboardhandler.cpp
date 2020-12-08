@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2020 LG Electronics, Inc.
+// Copyright (c) 2015-2021 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -198,7 +198,7 @@ void QEmulatorKeyboardHandler::processKeyEvent(int nativecode, int unicode, int 
 
     QWindowSystemInterface::handleExtendedKeyEvent(0, (isPress ? QEvent::KeyPress : QEvent::KeyRelease),
                                                    qtcode, modifiers, nativecode + 8, 0, int(modifiers),
-                                                   (unicode != 0xffff ) ? QString(unicode) : QString(), autoRepeat);
+                                                   (unicode != 0xffff ) ? QString(QChar(unicode)) : QString(), autoRepeat);
 }
 
 QEmulatorKeyboardHandler::KeycodeAction QEmulatorKeyboardHandler::processKeycode(quint16 keycode, bool pressed, bool autorepeat)
