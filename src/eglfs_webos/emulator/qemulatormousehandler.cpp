@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2020 LG Electronics, Inc.
+// Copyright (c) 2015-2021 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -44,8 +44,13 @@ QEmulatorMouseHandler *QEmulatorMouseHandler::create(const QString &device, cons
     int grab = 0;
     bool abs = false;
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    const auto args = QStringView{specification}.split(QLatin1Char(':'));
+    for (const auto &arg : args) {
+#else
     const auto args = specification.splitRef(QLatin1Char(':'));
     for (const QStringRef &arg : args) {
+#endif
         if (arg == QLatin1String("nocompress"))
             compression = false;
         else if (arg.startsWith(QLatin1String("dejitter=")))

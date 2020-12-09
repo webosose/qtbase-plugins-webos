@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2020 LG Electronics, Inc.
+// Copyright (c) 2015-2021 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,8 +22,11 @@
 #include <QSocketNotifier>
 #include <QPoint>
 #include <qpa/qwindowsysteminterface.h>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtGui/qpointingdevice.h>
+#else
 #include <QTouchDevice>
-
+#endif
 #include "qemulatormousehandler.h"
 
 class QDeviceDiscovery;
@@ -57,7 +60,11 @@ private:
     int m_xoffset;
     int m_yoffset;
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QPointingDevice *m_touchDevice;
+#else
     QTouchDevice *m_touchDevice;
+#endif
     int m_touchState;
     bool m_isTouch;
     bool m_isMultiTouch;

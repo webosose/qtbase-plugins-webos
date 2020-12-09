@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2020 LG Electronics, Inc.
+// Copyright (c) 2015-2021 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -115,6 +115,14 @@ void QEmulatorMouseManager::registerTouchDevice()
 //    if (m_touchDevice)
 //        return;
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    m_touchDevice = new QPointingDevice;
+    m_touchDevice->setType(QInputDevice::DeviceType::TouchScreen);
+    m_touchDevice->setCapabilities(QInputDevice::Capability::Position | QInputDevice::Capability::Area);
+    m_touchDevice->setCapabilities(m_touchDevice->capabilities() | QInputDevice::Capability::Pressure);
+
+    QWindowSystemInterface::registerInputDevice(m_touchDevice);
+#else
     m_touchDevice = new QTouchDevice;
     m_touchDevice->setName(QLatin1String("EmulatorTouch"));
     m_touchDevice->setType(QTouchDevice::TouchScreen);
@@ -122,6 +130,7 @@ void QEmulatorMouseManager::registerTouchDevice()
     m_touchDevice->setCapabilities(m_touchDevice->capabilities() | QTouchDevice::Pressure);
 
     QWindowSystemInterface::registerTouchDevice(m_touchDevice);
+#endif
 }
 
 void QEmulatorMouseManager::unregisterTouchDevice()
@@ -129,13 +138,21 @@ void QEmulatorMouseManager::unregisterTouchDevice()
     if (!m_touchDevice)
         return;
 
-    // At app exit the cleanup may have already been done, avoid
-    // double delete by checking the list first.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Quoted from https://codereview.qt-project.org/c/qt/qtbase/+/263526:
+    // When a device is unplugged, the platform plugin should destroy the
+    // corresponding QInputDevice instance. There is no unregisterInputDevice()
+    // function, because it's enough for the destructor to call
+    // QInputDevicePrivate::unregisterDevice(); while other parts of Qt can
+    // connect to the QObject::destroyed() signal to be notified when a device is
+    // unplugged or otherwise destroyed.
+    delete m_touchDevice;
+#else
     if (QWindowSystemInterface::isTouchDeviceRegistered(m_touchDevice)) {
         QWindowSystemInterface::unregisterTouchDevice(m_touchDevice);
         delete m_touchDevice;
     }
-
+#endif
     m_touchDevice = nullptr;
 }
 
@@ -149,6 +166,25 @@ QWindowSystemInterface::TouchPoint QEmulatorMouseManager::translateTouchPoint(QP
     touchPoint.area = QRectF(pt, QSize(1,1));
     touchPoint.pressure = 1;
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    if (button == Qt::LeftButton) {
+        if (type == QEvent::MouseButtonPress) {
+            if (index == 0) m_touchState = 1;
+            touchPoint.state = QEventPoint::State(Qt::TouchPointPressed);
+        } else if (type == QEvent::MouseButtonRelease) {
+            if (index == 0) {
+                m_touchState = 0;
+                m_isMultiTouch = 0;
+            }
+            touchPoint.state = QEventPoint::State(Qt::TouchPointReleased);
+        }
+    } else if (m_touchState == 1) {
+        touchPoint.state = QEventPoint::State(Qt::TouchPointMoved);
+    } else {
+        touchPoint.state = QEventPoint::State(Qt::TouchPointReleased);
+        touchPoint.pressure = 0;
+    }
+#else
     if (button == Qt::LeftButton) {
         if (type == QEvent::MouseButtonPress) {
             if (index == 0) m_touchState = 1;
@@ -166,6 +202,7 @@ QWindowSystemInterface::TouchPoint QEmulatorMouseManager::translateTouchPoint(QP
         touchPoint.state = Qt::TouchPointReleased;
         touchPoint.pressure = 0;
     }
+#endif
 
     return touchPoint;
 }

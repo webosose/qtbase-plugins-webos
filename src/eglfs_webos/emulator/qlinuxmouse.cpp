@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2020 LG Electronics, Inc.
+// Copyright (c) 2015-2021 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@
 #include <QStringList>
 #include <QGuiApplication>
 #include <QDebug>
+#include <QFile>
 
 #include <qpa/qwindowsysteminterface.h>
 #include <qplatformdefs.h>
@@ -125,6 +126,34 @@ void QLinuxMouseHandler::sendMouseEvent(int x, int y, Qt::MouseButtons buttons, 
 
     // determine event type and update state of current touch point
     QEvent::Type type = QEvent::None;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    switch (buttons) {
+    case Qt::LeftButton:
+        if (!MTag) {
+            touchPoint.state = QEventPoint::State(Qt::TouchPointMoved);
+            type = QEvent::TouchUpdate;
+        } else {
+            touchPoint.state = QEventPoint::State(Qt::TouchPointPressed);
+            type = QEvent::TouchBegin;
+        }
+        break;
+
+    case Qt::NoButton:
+        touchPoint.state = QEventPoint::State(Qt::TouchPointReleased);
+        type = QEvent::TouchEnd;
+        break;
+
+    default:
+        touchPoint.state = QEventPoint::State(Qt::TouchPointMoved);
+        type = QEvent::TouchUpdate;
+        break;
+    }
+
+    pointList.append(touchPoint);
+
+    Qt::MouseButton button{Qt::MouseButton::LeftButton};
+    QWindowSystemInterface::handleMouseEvent(0, pos, pos, buttons, button, type);
+#else
     switch (buttons) {
     case Qt::LeftButton:
         if (!MTag) {
@@ -150,6 +179,7 @@ void QLinuxMouseHandler::sendMouseEvent(int x, int y, Qt::MouseButtons buttons, 
     pointList.append(touchPoint);
 
     QWindowSystemInterface::handleMouseEvent(0, pos, pos, buttons);
+#endif
     m_prevx = x;
     m_prevy = y;
 }
@@ -212,10 +242,19 @@ void QLinuxMouseHandler::readMouseData()
             }
             else if (ie_data->code == REL_WHEEL) {
                 int delta = 120 * ie_data->value;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+                QPoint pixelDelta{m_x, m_y + delta};
+                QPoint angleData;
+                QWindowSystemInterface::handleWheelEvent(0,
+                                                         QPoint(m_x, m_y),
+                                                         QPoint(m_x, m_y),
+                                                         pixelDelta, angleData);
+#else
                 QWindowSystemInterface::handleWheelEvent(0,
                                                          QPoint(m_x, m_y),
                                                          QPoint(m_x, m_y),
                                                          delta, Qt::Vertical);
+#endif
             }
         } else if (ie_data->type == EV_KEY && ie_data->code == BTN_TOUCH) {
             m_buttons = ie_data->value ? Qt::LeftButton : Qt::NoButton;
@@ -226,7 +265,11 @@ void QLinuxMouseHandler::readMouseData()
             Qt::MouseButton button = Qt::NoButton;
             switch (ie_data->code) {
             case BTN_LEFT: button = Qt::LeftButton; break;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+            case BTN_MIDDLE: button = Qt::MiddleButton; break;
+#else
             case BTN_MIDDLE: button = Qt::MidButton; break;
+#endif
             case BTN_RIGHT: button = Qt::RightButton; break;
             }
             if (ie_data->value)

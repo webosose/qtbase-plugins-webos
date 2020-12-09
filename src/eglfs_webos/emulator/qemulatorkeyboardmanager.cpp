@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2020 LG Electronics, Inc.
+// Copyright (c) 2015-2021 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -109,8 +109,13 @@ void QEmulatorKeyboardManager::loadKeymap(const QString &file)
         // Restore the default, which is either the built-in keymap or
         // the one given in the plugin spec.
         QString keymapFromSpec;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        const auto specs = QStringView{m_spec}.split(QLatin1Char(':'));
+        for (const auto &arg : specs) {
+#else
         const auto specs = m_spec.splitRef(QLatin1Char(':'));
         for (const QStringRef &arg : specs) {
+#endif
             if (arg.startsWith(QLatin1String("keymap=")))
                 keymapFromSpec = arg.mid(7).toString();
         }
