@@ -1,4 +1,4 @@
-// Copyright (c) 2020 LG Electronics, Inc.
+// Copyright (c) 2020-2021 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -65,6 +65,12 @@ enum PlaneOrder {
 // Hold additional properties
 struct WebOSKmsPlane {
     uint32_t blendPropertyId = 0;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#ifdef PROTECTED_CONTENT
+    uint32_t secureMode = 0;
+    uint32_t fbTranslationModeId = 0;
+#endif
+#endif
 };
 
 // Hold additional planes
@@ -103,6 +109,9 @@ public:
 
     void flip() override;
     void updateFlipStatus() override;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    uint32_t gbmFlags() override;
+#endif
 
     void setOverlayBufferObject(void *bo, QRectF rect, uint32_t zpos);
 

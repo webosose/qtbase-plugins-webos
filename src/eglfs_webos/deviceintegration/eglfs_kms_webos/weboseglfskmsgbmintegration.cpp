@@ -1,4 +1,4 @@
-// Copyright (c) 2020 LG Electronics, Inc.
+// Copyright (c) 2020-2021 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,9 +27,7 @@
 
 #ifdef PLANE_COMPOSITION
 #include <gbm.h>
-#if QT_CONFIG(egl_protected)
 #include <gbm_priv.h>
-#endif
 #endif
 
 static QMutex s_frameBufferMutex;
@@ -169,6 +167,18 @@ void WebOSEglFSKmsGbmDevice::addPlaneProperties()
             if (!strcasecmp(prop->name, "blend_op")) {
                 webosPlane.blendPropertyId = prop->prop_id;
             }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#ifdef PROTECTED_CONTENT
+            else if (!strcasecmp(prop->name, "fb_translation_mode")) {
+                webosPlane.fbTranslationModeId = prop->prop_id;
+                for (int i = 0; i < prop->count_enums; i++) {
+                    if (strcmp(prop->enums[i].name, "sec"))
+                        continue;
+                    webosPlane.secureMode = prop->enums[i].value;
+                }
+            }
+#endif
+#endif
         });
 
         drmModeFreeObjectProperties(objProps);
@@ -333,6 +343,18 @@ uint32_t WebOSEglFSKmsGbmScreen::framebufferForOverlayBufferObject(gbm_bo *bo)
     return fb;
 }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+uint32_t WebOSEglFSKmsGbmScreen::gbmFlags()
+{
+    uint32_t flags = QEglFSKmsGbmScreen::gbmFlags();
+#ifdef PROTECTED_CONTENT
+    if (qEnvironmentVariableIntValue("QT_EGL_PROTECTED_RENDERING"))
+        flags |= GBM_BO_USAGE_PROTECTED_QTI;
+#endif
+    return flags;
+}
+#endif
+
 void WebOSEglFSKmsGbmScreen::updateFlipStatus()
 {
     if (page_flip_notifier)
@@ -376,6 +398,13 @@ void WebOSEglFSKmsGbmScreen::flip()
                 drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->zposPropertyId, p);
                 //Additional Properties
                 drmModeAtomicAddProperty(request, op.eglfs_plane->id, wPlane.blendPropertyId, 2);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#ifdef PROTECTED_CONTENT
+                static int secured = qEnvironmentVariableIntValue("QT_EGL_PROTECTED_RENDERING");
+                if (secured)
+                    drmModeAtomicAddProperty(request, op.eglfs_plane->id, wPlane.fbTranslationModeId, wPlane.secureMode);
+#endif
+#endif
                 continue;
             }
 
@@ -430,12 +459,16 @@ void WebOSEglFSKmsGbmScreen::flip()
             //Additional Properties
             drmModeAtomicAddProperty(request, plane.id, wPlane.blendPropertyId, 2);
 
-#if QT_CONFIG(egl_protected)
+#ifdef PROTECTED_CONTENT
             int secured = 0;
             gbm_perform(GBM_PERFORM_GET_SECURE_BUFFER_STATUS, bo.gbo, &secured);
             if (secured) {
                 qDebug() << "overlay bo" << bo.gbo << "secured";
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+                drmModeAtomicAddProperty(request, plane.id, wPlane.fbTranslationModeId, wPlane.secureMode);
+#else
                 drmModeAtomicAddProperty(request, plane.id, plane.fbTranslationModeId, plane.secureMode);
+#endif
             }
 #endif
         }

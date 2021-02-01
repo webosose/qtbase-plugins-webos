@@ -40,6 +40,10 @@ plane_composition {
     DEFINES += PLANE_COMPOSITION
 }
 
+egl_protected_content {
+    DEFINES += PROTECTED_CONTENT
+}
+
 SOURCES += $$PWD/weboseglfskmsgbmmain.cpp \
            $$PWD/weboseglfskmsgbmintegration.cpp
 
