@@ -174,10 +174,11 @@ void WebOSEglFSIntegration::createInputHandlers()
 
     QString touchDevs = initializeDevices(scannedTouchDevices);
 
+    bool useDummyTouchDevice = false;
     // HACK: to disable device discovery in QEvdevTouchManager when no device is connected.
     if (touchDevs.isEmpty()) {
         touchDevs = "/dev/null";
-        m_dummyTouchDevice = true;
+        useDummyTouchDevice = true;
     }
 
     QString env = QString::fromLocal8Bit(qgetenv("QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS"));
@@ -189,6 +190,9 @@ void WebOSEglFSIntegration::createInputHandlers()
     }
 
     m_touchMgr = new QEvdevTouchManager(QLatin1String("EvdevTouch"), touchDevs, this);
+    // HACK: Remove the null device to prevent reading it
+    if (m_touchMgr && useDummyTouchDevice)
+        m_touchMgr->removeDevice("/dev/null");
 
     if (m_touchDiscovery && m_touchMgr) {
         connect(m_touchDiscovery, &QDeviceDiscovery::deviceDetected,
@@ -207,10 +211,11 @@ void WebOSEglFSIntegration::createInputHandlers()
 
     QString kbdDevs = initializeDevices(scannedKbdDevices);
 
+    bool useDummyKbdDevice = false;
     // HACK: to disable device discovery in QEvdevKeyboardManager when no device is connected.
     if (kbdDevs.isEmpty()) {
         kbdDevs = "/dev/null";
-        m_dummyKbdDevice = true;
+        useDummyKbdDevice = true;
     }
 
     env = QString::fromLocal8Bit(qgetenv("QT_QPA_EVDEV_KEYBOARD_PARAMETERS"));
@@ -222,6 +227,9 @@ void WebOSEglFSIntegration::createInputHandlers()
     }
 
     m_kbdMgr = new QEvdevKeyboardManager(QLatin1String("EvdevKeyboard"), kbdDevs, this);
+    // HACK: Remove the null device to prevent reading it
+    if (m_kbdMgr && useDummyKbdDevice)
+        m_kbdMgr->removeKeyboard("/dev/null");
 
     if (m_kbdDiscovery && m_kbdMgr) {
         connect(m_kbdDiscovery, &QDeviceDiscovery::deviceDetected,
@@ -315,11 +323,6 @@ void WebOSEglFSIntegration::arrangeTouchDevices()
 
     const QStringList devices = m_touchDiscovery->scanConnectedDevices();
 
-    if (m_dummyTouchDevice && !devices.empty()) {
-        m_dummyTouchDevice = false;
-        m_touchMgr->removeDevice("/dev/null");
-    }
-
     if (m_useFixedAssociationForTouch)
         prepareFixedOutputMapping(devices, QLatin1String("touchDevice"));
     else
@@ -363,11 +366,6 @@ void WebOSEglFSIntegration::arrangeKbdDevices()
         return;
 
     const QStringList devices = m_kbdDiscovery->scanConnectedDevices();
-
-    if (m_dummyKbdDevice && !devices.empty()) {
-        m_dummyKbdDevice = false;
-        m_kbdMgr->removeKeyboard("/dev/null");
-    }
 
     if (m_useFixedAssociationForKeyboard)
         prepareFixedOutputMapping(devices, QLatin1String("keyboardDevice"));

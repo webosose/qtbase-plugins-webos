@@ -1,4 +1,4 @@
-// Copyright (c) 2020 LG Electronics, Inc.
+// Copyright (c) 2020-2021 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -93,8 +93,6 @@ private:
     QJsonDocument m_configJson;
     bool m_useFixedAssociationForTouch = false;
     bool m_useFixedAssociationForKeyboard = false;
-    bool m_dummyTouchDevice = false;
-    bool m_dummyKbdDevice = false;
     QMap<QString, QVariantMap> m_outputSettings;
 #if defined(EMULATOR)
     QEmulatorKeyboardManager* m_emulatorKeyboardManager;
