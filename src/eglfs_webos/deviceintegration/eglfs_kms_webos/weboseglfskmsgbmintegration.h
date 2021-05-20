@@ -23,6 +23,7 @@
 #include <private/qeglfskmsgbmdevice_p.h>
 #include <private/qeglfskmsgbmscreen_p.h>
 #include <private/qeglfskmsdevice_p.h>
+#include <qpa/qplatformscreen_p.h>
 
 class WebOSKmsScreenConfig : public QKmsScreenConfig
 {
@@ -102,7 +103,11 @@ private:
     QMap<uint32_t, WebOSKmsOutput> m_webosOutputs;
 };
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+class WebOSEglFSKmsGbmScreen : public QEglFSKmsGbmScreen, public QNativeInterface::Private::QWebOSScreen
+#else
 class WebOSEglFSKmsGbmScreen : public QEglFSKmsGbmScreen
+#endif
 {
 public:
     WebOSEglFSKmsGbmScreen(QEglFSKmsDevice *device, const QKmsOutput &output, bool headless);
@@ -124,6 +129,17 @@ public:
         bool updated = false;
     };
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    int addLayer(void *gbm_bo, const QRectF &geometry) override;
+    void setLayerBuffer(int id, void *gbm_bo) override;
+    void setLayerGeometry(int id, const QRectF &geometry) override;
+    void setLayerAlpha(int id, qreal alpha) override {}
+    bool removeLayer(int id) override;
+    void addFlipListener(void (*callback)()) override { m_flipCb = callback; }
+
+    void clearBufferObject(uint32_t zpos);
+#endif
+
 private:
     uint32_t framebufferForOverlayBufferObject(gbm_bo *bo);
 
@@ -132,6 +148,9 @@ private:
     QVector<struct BufferObject> m_bufferObjects;
     QVector<struct BufferObject> m_nextBufferObjects;
     QVector<struct BufferObject> m_currentBufferObjects;
+
+    void (*m_flipCb)();
+    QVector<bool> m_layerAdded;
 };
 #endif
 

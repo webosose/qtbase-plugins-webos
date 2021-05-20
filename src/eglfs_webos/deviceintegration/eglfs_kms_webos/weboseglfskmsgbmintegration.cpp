@@ -262,6 +262,7 @@ WebOSEglFSKmsGbmScreen::WebOSEglFSKmsGbmScreen(QEglFSKmsDevice *device, const QK
     m_bufferObjects.resize(Plane_End);
     m_nextBufferObjects.resize(Plane_End);
     m_currentBufferObjects.resize(Plane_End);
+    m_layerAdded.resize(Plane_End);
 }
 
 uint32_t WebOSEglFSKmsGbmScreen::framebufferForOverlayBufferObject(gbm_bo *bo)
@@ -378,6 +379,9 @@ void WebOSEglFSKmsGbmScreen::updateFlipStatus()
         m_currentBufferObjects[p] = m_nextBufferObjects[p];
         m_nextBufferObjects[p].updated = false;
     }
+
+    if (m_flipCb)
+        m_flipCb();
 }
 
 void WebOSEglFSKmsGbmScreen::flip()
@@ -444,7 +448,11 @@ void WebOSEglFSKmsGbmScreen::flip()
             uint32_t sw = gbm_bo_get_width(bo.gbo);
             uint32_t sh = gbm_bo_get_height(bo.gbo);
 
+            // HOTFIX: Crop out the region which overflows the screen
+            bo.rect = bo.rect.intersected(geometry());
+
             qDebug() << "overlay" << plane.id << "source" << sw << sh << "dest" << bo.rect;
+
             drmModeAtomicAddProperty(request, plane.id, plane.framebufferPropertyId, bo.fb);
             drmModeAtomicAddProperty(request, plane.id, plane.crtcPropertyId, op.crtc_id);
             drmModeAtomicAddProperty(request, plane.id, plane.srcXPropertyId, 0);
@@ -478,6 +486,7 @@ void WebOSEglFSKmsGbmScreen::flip()
     QEglFSKmsGbmScreen::flip();
 }
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 void WebOSEglFSKmsGbmScreen::setOverlayBufferObject(void *bo, QRectF rect, uint32_t zpos)
 {
     QKmsOutput &op(output());
@@ -503,4 +512,99 @@ void WebOSEglFSKmsGbmScreen::setOverlayBufferObject(void *bo, QRectF rect, uint3
 
     m_bufferObjects[zpos] = BufferObject((gbm_bo *)bo, rect, true);
 }
+#else
+void WebOSEglFSKmsGbmScreen::clearBufferObject(uint32_t zpos)
+{
+    // In GUI thread
+    QMutexLocker lock(&m_bufferObjectMutex);
+
+    if (m_bufferObjects[zpos].updated) {
+        gbm_bo *old_bo = m_bufferObjects[zpos].gbo;
+        m_bufferObjects[zpos].gbo = nullptr;
+        qDebug() << "destroy old bo" << old_bo;
+        gbm_bo_destroy(old_bo);
+    }
+}
+
+void WebOSEglFSKmsGbmScreen::setOverlayBufferObject(void *bo, QRectF rect, uint32_t zpos)
+{
+    qDebug() << "WebOSEglFSKmsGbmScreen::setOverlayPlaneFramebuffer:" << bo << name() << rect << zpos;
+
+    // Invalid destination rect
+    if (bo != nullptr && rect.isEmpty())
+        return;
+
+    clearBufferObject(zpos);
+
+    // In GUI thread
+    QMutexLocker lock(&m_bufferObjectMutex);
+    m_bufferObjects[zpos] = BufferObject((gbm_bo *)bo, rect, true);
+}
+
+int WebOSEglFSKmsGbmScreen::addLayer(void *gbm_bo, const QRectF &geometry)
+{
+    QKmsOutput &op(output());
+    WebOSEglFSKmsGbmDevice *wd = static_cast<WebOSEglFSKmsGbmDevice *>(device());
+    WebOSKmsOutput &webosOutput = wd->getOutput(op);
+
+    for (int p = 0; p < Plane_End; p++) {
+        if (!webosOutput.m_assignedPlanes.contains(p))
+            continue;
+
+        if (m_layerAdded[p])
+            continue;
+
+        qInfo() << "addLayer to" << p << "for" << gbm_bo << geometry;
+
+        m_layerAdded[p] = true;
+        setOverlayBufferObject(gbm_bo, geometry, p);
+        return p;
+    }
+
+    return -1;
+}
+
+void WebOSEglFSKmsGbmScreen::setLayerBuffer(int zpos, void *bo)
+{
+    if (!m_layerAdded[zpos]) {
+        qWarning() << "The layer" << zpos << "is not added yet.";
+        return;
+    }
+
+    qDebug() << "WebOSEglFSKmsGbmScreen::setLayerBuffer" << name() << bo << "for" << zpos;
+
+    // Use previous geometry rect
+    setOverlayBufferObject((gbm_bo *)bo,  m_bufferObjects[zpos].rect, zpos);
+}
+
+void WebOSEglFSKmsGbmScreen::setLayerGeometry(int zpos, const QRectF &geometry)
+{
+    if (!m_layerAdded[zpos])
+        qWarning() << "The layer" << zpos << "is not added yet.";
+
+    qDebug() << "WebOSEglFSKmsGbmScreen::setLayerGeometry" << name() << geometry << "for" << zpos;
+
+    // In GUI thread
+    QMutexLocker lock(&m_bufferObjectMutex);
+
+    m_bufferObjects[zpos].rect = geometry;
+}
+
+bool WebOSEglFSKmsGbmScreen::removeLayer(int zpos)
+{
+    if (!m_layerAdded[zpos]) {
+        qWarning() << "The layer" << zpos << "is not added yet.";
+        return false;
+    }
+
+    m_layerAdded[zpos] = false;
+
+    qInfo() << "removeLayer from" << zpos;
+
+    // Use previous geometry rect
+    setOverlayBufferObject(nullptr, QRectF(), zpos);
+    return true;
+}
+#endif
+
 #endif
