@@ -291,7 +291,6 @@ uint32_t WebOSEglFSKmsGbmScreen::framebufferForOverlayBufferObject(gbm_bo *bo)
     }
 
     qDebug() << bo << gbm_bo_get_fd(bo) << alignedWidth << alignedHeight << "format" << import_fd_data.format << "NV12" << GBM_FORMAT_NV12 << ubwc_status;
-    qDebug() << "buf layout" << "v_increment" << buf_layout.planes[0].v_increment << "num_plane" << buf_layout.num_planes;
 
     // The gem_handle should not be closed by another screen
     // Cover mirroring case when same gem handle is used across the screens
@@ -338,8 +337,6 @@ uint32_t WebOSEglFSKmsGbmScreen::framebufferForOverlayBufferObject(gbm_bo *bo)
         qWarning() << "Failed to DRM_IOCTL_GEM_CLOSE" << bo << gem_handle;
         return 0;
     }
-
-    qDebug("framebufferForOverlayBufferObject fb: %u gem_handle %u", fb, gem_handle);
 
     return fb;
 }
@@ -439,19 +436,20 @@ void WebOSEglFSKmsGbmScreen::flip()
                 continue;
             }
 
-            //To update flip status
-            qDebug("render buffer object to bo %u with %p", p, bo.gbo);
+            qDebug() << "render buffer object plane" << p << "bo" << bo.gbo << bo.rect;
 
             // Can be null to mean clear overlay plane
             bo.fb = framebufferForOverlayBufferObject(bo.gbo);
+            // Set fb to clear it on updateFlipStatus
+            m_bufferObjects[p].fb = bo.fb;
 
             uint32_t sw = gbm_bo_get_width(bo.gbo);
             uint32_t sh = gbm_bo_get_height(bo.gbo);
 
-            // HOTFIX: Crop out the region which overflows the screen
-            bo.rect = bo.rect.intersected(geometry());
+            // Crop out the dest region to avoid from overflowing the screen
+            bo.rect = bo.rect.intersected(QRectF(QPointF(0,0), geometry().size()));
 
-            qDebug() << "overlay" << plane.id << "source" << sw << sh << "dest" << bo.rect;
+            qDebug() << "overlay" << plane.id << "plane" << p << "fb" << bo.fb << "source" << sw << sh << "dest" << bo.rect << name() << this;
 
             drmModeAtomicAddProperty(request, plane.id, plane.framebufferPropertyId, bo.fb);
             drmModeAtomicAddProperty(request, plane.id, plane.crtcPropertyId, op.crtc_id);
@@ -462,7 +460,8 @@ void WebOSEglFSKmsGbmScreen::flip()
             drmModeAtomicAddProperty(request, plane.id, plane.crtcXPropertyId, bo.rect.x());
             drmModeAtomicAddProperty(request, plane.id, plane.crtcYPropertyId, bo.rect.y());
             drmModeAtomicAddProperty(request, plane.id, plane.crtcwidthPropertyId, bo.rect.width());
-            drmModeAtomicAddProperty(request, plane.id, plane.crtcheightPropertyId, bo.rect.height());
+            //HACK: limit to minimum size of destination height to avoid failure of drm atomic commit
+            drmModeAtomicAddProperty(request, plane.id, plane.crtcheightPropertyId, qMax(bo.rect.height(), 270.0));
             drmModeAtomicAddProperty(request, plane.id, plane.zposPropertyId, p);
             //Additional Properties
             drmModeAtomicAddProperty(request, plane.id, wPlane.blendPropertyId, 2);
@@ -554,7 +553,7 @@ int WebOSEglFSKmsGbmScreen::addLayer(void *gbm_bo, const QRectF &geometry)
         if (m_layerAdded[p])
             continue;
 
-        qInfo() << "addLayer to" << p << "for" << gbm_bo << geometry;
+        qInfo() << "addLayer plane" << p << "bo" << gbm_bo << "dest" << geometry << name() << this;
 
         m_layerAdded[p] = true;
         setOverlayBufferObject(gbm_bo, geometry, p);
@@ -571,7 +570,7 @@ void WebOSEglFSKmsGbmScreen::setLayerBuffer(int zpos, void *bo)
         return;
     }
 
-    qDebug() << "WebOSEglFSKmsGbmScreen::setLayerBuffer" << name() << bo << "for" << zpos;
+    qDebug() << "WebOSEglFSKmsGbmScreen::setLayerBuffer plane" << zpos << "bo" << bo << name() << this;
 
     // Use previous geometry rect
     setOverlayBufferObject((gbm_bo *)bo,  m_bufferObjects[zpos].rect, zpos);
@@ -582,7 +581,7 @@ void WebOSEglFSKmsGbmScreen::setLayerGeometry(int zpos, const QRectF &geometry)
     if (!m_layerAdded[zpos])
         qWarning() << "The layer" << zpos << "is not added yet.";
 
-    qDebug() << "WebOSEglFSKmsGbmScreen::setLayerGeometry" << name() << geometry << "for" << zpos;
+    qDebug() << "WebOSEglFSKmsGbmScreen::setLayerGeometry" << geometry << "plane" << zpos << name() << this;
 
     // In GUI thread
     QMutexLocker lock(&m_bufferObjectMutex);
@@ -599,7 +598,7 @@ bool WebOSEglFSKmsGbmScreen::removeLayer(int zpos)
 
     m_layerAdded[zpos] = false;
 
-    qInfo() << "removeLayer from" << zpos;
+    qInfo() << "removeLayer plane" << zpos << name() << this;
 
     // Use previous geometry rect
     setOverlayBufferObject(nullptr, QRectF(), zpos);
