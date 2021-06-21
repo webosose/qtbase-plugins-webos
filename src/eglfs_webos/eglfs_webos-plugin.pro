@@ -22,7 +22,7 @@ PLUGIN_CLASS_NAME = WebOSEglFSIntegrationPlugin
 
 load(qt_plugin)
 
-QT += eglfsdeviceintegration-private input_support-private devicediscovery_support-private
+QT += eglfsdeviceintegration-private input_support-private devicediscovery_support-private fb_support-private
 
 CONFIG += egl
 
