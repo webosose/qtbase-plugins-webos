@@ -441,7 +441,7 @@ void WebOSEglFSKmsGbmScreen::flip()
             // Can be null to mean clear overlay plane
             bo.fb = framebufferForOverlayBufferObject(bo.gbo);
             // Set fb to clear it on updateFlipStatus
-            m_bufferObjects[p].fb = bo.fb;
+            m_nextBufferObjects[p].fb = bo.fb;
 
             uint32_t sw = gbm_bo_get_width(bo.gbo);
             uint32_t sh = gbm_bo_get_height(bo.gbo);
