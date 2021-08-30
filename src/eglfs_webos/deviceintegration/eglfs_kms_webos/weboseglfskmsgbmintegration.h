@@ -149,7 +149,7 @@ private:
     QVector<struct BufferObject> m_nextBufferObjects;
     QVector<struct BufferObject> m_currentBufferObjects;
 
-    void (*m_flipCb)();
+    void (*m_flipCb)() = nullptr;
     QVector<bool> m_layerAdded;
 };
 #endif
