@@ -95,12 +95,35 @@ QKmsScreenConfig *WebOSEglFSKmsGbmIntegration::createScreenConfig()
     return screenConfig;
 }
 
-#ifdef PLANE_COMPOSITION
 void WebOSEglFSKmsGbmIntegration::screenInit()
 {
     QEglFSKmsGbmIntegration::screenInit();
 
+#ifdef PLANE_COMPOSITION
     static_cast<WebOSEglFSKmsGbmDevice *>(m_device)->addPlaneProperties();
+#endif
+}
+
+QFunctionPointer WebOSEglFSKmsGbmIntegration::platformFunction(const QByteArray &function) const
+{
+#ifdef PLANE_COMPOSITION
+    if (function == "setOverlayBufferObject")
+        return QFunctionPointer(setOverlayBufferObject);
+#endif
+
+    return nullptr;
+}
+
+void *WebOSEglFSKmsGbmIntegration::nativeResourceForIntegration(const QByteArray &name)
+{
+    if (name == QByteArrayLiteral("gbm_device") && m_device)
+        return (void *) static_cast<QEglFSKmsGbmDevice *>(m_device)->gbmDevice();
+
+    if (name == QByteArrayLiteral("dri_address_of_page_flip_notifier") && m_device)
+        // return pointer to function "page_flip_notifier"
+        return (void*)&page_flip_notifier;
+
+    return QEglFSKmsIntegration::nativeResourceForIntegration(name);
 }
 
 QKmsDevice *WebOSEglFSKmsGbmIntegration::createDevice()
@@ -124,6 +147,7 @@ QKmsDevice *WebOSEglFSKmsGbmIntegration::createDevice()
     return new WebOSEglFSKmsGbmDevice(screenConfig(), path);
 }
 
+#ifdef PLANE_COMPOSITION
 void WebOSEglFSKmsGbmIntegration::setOverlayBufferObject(const QScreen *screen, void *bo, QRectF rect, uint32_t zpos)
 {
     if (!screen || !screen->handle())
@@ -132,27 +156,21 @@ void WebOSEglFSKmsGbmIntegration::setOverlayBufferObject(const QScreen *screen, 
     auto *gbmScreen = static_cast<WebOSEglFSKmsGbmScreen *>(screen->handle());
     gbmScreen->setOverlayBufferObject(bo, rect, zpos);
 }
+#endif
 
-QFunctionPointer WebOSEglFSKmsGbmIntegration::platformFunction(const QByteArray &function) const
+QPlatformScreen * WebOSEglFSKmsGbmDevice::createScreen(const QKmsOutput &output)
 {
-    if (function == "setOverlayBufferObject")
-        return QFunctionPointer(setOverlayBufferObject);
+    QEglFSKmsGbmScreen *screen = new WebOSEglFSKmsGbmScreen(this, output, false);
 
-    return nullptr;
+#ifdef PLANE_COMPOSITION
+    assignPlanes(screen->output());
+#endif
+    createGlobalCursor(screen);
+
+    return screen;
 }
 
-void *WebOSEglFSKmsGbmIntegration::nativeResourceForIntegration(const QByteArray &name)
-{
-    if (name == QByteArrayLiteral("gbm_device") && m_device)
-        return (void *) static_cast<QEglFSKmsGbmDevice *>(m_device)->gbmDevice();
-
-    if (name == QByteArrayLiteral("dri_address_of_page_flip_notifier") && m_device)
-        // return pointer to function "page_flip_notifier"
-        return (void*)&page_flip_notifier;
-
-    return QEglFSKmsIntegration::nativeResourceForIntegration(name);
-}
-
+#ifdef PLANE_COMPOSITION
 void WebOSEglFSKmsGbmDevice::addPlaneProperties()
 {
     for (QKmsPlane &plane : m_planes) {
@@ -245,113 +263,18 @@ void WebOSEglFSKmsGbmDevice::assignPlanes(const QKmsOutput &output)
         }
     }
 }
-
-QPlatformScreen * WebOSEglFSKmsGbmDevice::createScreen(const QKmsOutput &output)
-{
-    QEglFSKmsGbmScreen *screen = new WebOSEglFSKmsGbmScreen(this, output, false);
-
-    assignPlanes(screen->output());
-    createGlobalCursor(screen);
-
-    return screen;
-}
+#endif
 
 WebOSEglFSKmsGbmScreen::WebOSEglFSKmsGbmScreen(QEglFSKmsDevice *device, const QKmsOutput &output, bool headless)
     : QEglFSKmsGbmScreen(device, output, headless)
 {
+#ifdef PLANE_COMPOSITION
     m_bufferObjects.resize(Plane_End);
     m_nextBufferObjects.resize(Plane_End);
     m_currentBufferObjects.resize(Plane_End);
     m_layerAdded.resize(Plane_End);
-}
-
-uint32_t WebOSEglFSKmsGbmScreen::framebufferForOverlayBufferObject(gbm_bo *bo)
-{
-    struct gbm_import_fd_data import_fd_data;
-    generic_buf_layout_t buf_layout;
-    uint32_t alignedWidth = 0;
-    uint32_t alignedHeight = 0;
-    uint32_t stride[4] = { 0 };
-    uint32_t offset[4] = { 0 };
-    uint32_t ubwc_status = 0;
-
-    gbm_perform(GBM_PERFORM_GET_BO_ALIGNED_WIDTH, bo, &alignedWidth);
-    gbm_perform(GBM_PERFORM_GET_BO_ALIGNED_HEIGHT, bo, &alignedHeight);
-    gbm_perform(GBM_PERFORM_GET_UBWC_STATUS, bo, &ubwc_status);
-
-    import_fd_data.fd = gbm_bo_get_fd(bo);
-    import_fd_data.format = gbm_bo_get_format(bo);
-
-    int ret = gbm_perform(GBM_PERFORM_GET_PLANE_INFO, bo, &buf_layout);
-    if (ret == GBM_ERROR_NONE) {
-        for(int j=0; j< buf_layout.num_planes; j++) {
-            offset[j] = buf_layout.planes[j].offset;
-            stride[j] = buf_layout.planes[j].v_increment;
-        }
-    }
-
-    qDebug() << bo << gbm_bo_get_fd(bo) << alignedWidth << alignedHeight << "format" << import_fd_data.format << "NV12" << GBM_FORMAT_NV12 << ubwc_status;
-
-    // The gem_handle should not be closed by another screen
-    // Cover mirroring case when same gem handle is used across the screens
-    QMutexLocker lock(&s_frameBufferMutex);
-
-    uint32_t gem_handle = 0;
-    ret = drmPrimeFDToHandle(device()->fd(), import_fd_data.fd, &gem_handle);
-    if (ret) {
-        qWarning() << "Failed to drmPrimeFDToHandle" << device()->fd() << import_fd_data.fd;
-        return 0;
-    }
-
-    struct drm_mode_fb_cmd2 cmd2 {};
-    cmd2.width = alignedWidth;
-    cmd2.height = alignedHeight;
-    cmd2.pixel_format = import_fd_data.format;
-    cmd2.flags = DRM_MODE_FB_MODIFIERS;
-
-    for (int i = 0; i < buf_layout.num_planes; i++) {
-        cmd2.handles[i] = gem_handle;
-        cmd2.pitches[i] = buf_layout.planes[0].v_increment;
-        cmd2.offsets[i] = 0;
-        cmd2.modifier[i] = ubwc_status == 0 ? 0 : DRM_FORMAT_MOD_QCOM_COMPRESSED;
-    }
-
-    // In ubwc case, the offsets[0] is non-zero.
-    if (import_fd_data.format == GBM_FORMAT_NV12) {
-        cmd2.pitches[0] = buf_layout.planes[0].v_increment;
-        cmd2.pitches[1] = cmd2.pitches[0];
-        cmd2.offsets[0] = 0;
-        cmd2.offsets[1] = cmd2.pitches[0] * cmd2.height;
-    }
-
-    if ((ret = drmIoctl(device()->fd(), DRM_IOCTL_MODE_ADDFB2, &cmd2))) {
-        qWarning() << "Failed to DRM_IOCTL_MODE_ADDFB2" << bo << gem_handle;
-        return 0;
-    }
-
-    uint32_t fb = cmd2.fb_id;
-
-    struct drm_gem_close gem_close = {};
-    gem_close.handle = gem_handle;
-    if (drmIoctl(device()->fd(), DRM_IOCTL_GEM_CLOSE, &gem_close)) {
-        qWarning() << "Failed to DRM_IOCTL_GEM_CLOSE" << bo << gem_handle;
-        return 0;
-    }
-
-    return fb;
-}
-
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-uint32_t WebOSEglFSKmsGbmScreen::gbmFlags()
-{
-    uint32_t flags = QEglFSKmsGbmScreen::gbmFlags();
-#ifdef PROTECTED_CONTENT
-    if (qEnvironmentVariableIntValue("QT_EGL_PROTECTED_RENDERING"))
-        flags |= GBM_BO_USAGE_PROTECTED_QTI;
 #endif
-    return flags;
 }
-#endif
 
 void WebOSEglFSKmsGbmScreen::updateFlipStatus()
 {
@@ -360,6 +283,7 @@ void WebOSEglFSKmsGbmScreen::updateFlipStatus()
 
     QEglFSKmsGbmScreen::updateFlipStatus();
 
+#ifdef PLANE_COMPOSITION
     for (int p = 0; p < Plane_End; p++) {
         // The main plane will be handled in QEglFSKmsGbmScreen
         if (p == MainPlane)
@@ -379,10 +303,12 @@ void WebOSEglFSKmsGbmScreen::updateFlipStatus()
 
     if (m_flipCb)
         m_flipCb();
+#endif
 }
 
 void WebOSEglFSKmsGbmScreen::flip()
 {
+#ifdef PLANE_COMPOSITION
     QKmsOutput &op(output());
     WebOSEglFSKmsGbmDevice *wd = static_cast<WebOSEglFSKmsGbmDevice *>(device());
     WebOSKmsOutput &webosOutput = wd->getOutput(op);
@@ -481,8 +407,98 @@ void WebOSEglFSKmsGbmScreen::flip()
         }
 #endif
     }
+#endif
 
     QEglFSKmsGbmScreen::flip();
+}
+
+#ifdef PLANE_COMPOSITION
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+uint32_t WebOSEglFSKmsGbmScreen::gbmFlags()
+{
+    uint32_t flags = QEglFSKmsGbmScreen::gbmFlags();
+#ifdef PROTECTED_CONTENT
+    if (qEnvironmentVariableIntValue("QT_EGL_PROTECTED_RENDERING"))
+        flags |= GBM_BO_USAGE_PROTECTED_QTI;
+#endif
+    return flags;
+}
+#endif
+
+uint32_t WebOSEglFSKmsGbmScreen::framebufferForOverlayBufferObject(gbm_bo *bo)
+{
+    struct gbm_import_fd_data import_fd_data;
+    generic_buf_layout_t buf_layout;
+    uint32_t alignedWidth = 0;
+    uint32_t alignedHeight = 0;
+    uint32_t stride[4] = { 0 };
+    uint32_t offset[4] = { 0 };
+    uint32_t ubwc_status = 0;
+
+    gbm_perform(GBM_PERFORM_GET_BO_ALIGNED_WIDTH, bo, &alignedWidth);
+    gbm_perform(GBM_PERFORM_GET_BO_ALIGNED_HEIGHT, bo, &alignedHeight);
+    gbm_perform(GBM_PERFORM_GET_UBWC_STATUS, bo, &ubwc_status);
+
+    import_fd_data.fd = gbm_bo_get_fd(bo);
+    import_fd_data.format = gbm_bo_get_format(bo);
+
+    int ret = gbm_perform(GBM_PERFORM_GET_PLANE_INFO, bo, &buf_layout);
+    if (ret == GBM_ERROR_NONE) {
+        for(int j=0; j< buf_layout.num_planes; j++) {
+            offset[j] = buf_layout.planes[j].offset;
+            stride[j] = buf_layout.planes[j].v_increment;
+        }
+    }
+
+    qDebug() << bo << gbm_bo_get_fd(bo) << alignedWidth << alignedHeight << "format" << import_fd_data.format << "NV12" << GBM_FORMAT_NV12 << ubwc_status;
+
+    // The gem_handle should not be closed by another screen
+    // Cover mirroring case when same gem handle is used across the screens
+    QMutexLocker lock(&s_frameBufferMutex);
+
+    uint32_t gem_handle = 0;
+    ret = drmPrimeFDToHandle(device()->fd(), import_fd_data.fd, &gem_handle);
+    if (ret) {
+        qWarning() << "Failed to drmPrimeFDToHandle" << device()->fd() << import_fd_data.fd;
+        return 0;
+    }
+
+    struct drm_mode_fb_cmd2 cmd2 {};
+    cmd2.width = alignedWidth;
+    cmd2.height = alignedHeight;
+    cmd2.pixel_format = import_fd_data.format;
+    cmd2.flags = DRM_MODE_FB_MODIFIERS;
+
+    for (int i = 0; i < buf_layout.num_planes; i++) {
+        cmd2.handles[i] = gem_handle;
+        cmd2.pitches[i] = buf_layout.planes[0].v_increment;
+        cmd2.offsets[i] = 0;
+        cmd2.modifier[i] = ubwc_status == 0 ? 0 : DRM_FORMAT_MOD_QCOM_COMPRESSED;
+    }
+
+    // In ubwc case, the offsets[0] is non-zero.
+    if (import_fd_data.format == GBM_FORMAT_NV12) {
+        cmd2.pitches[0] = buf_layout.planes[0].v_increment;
+        cmd2.pitches[1] = cmd2.pitches[0];
+        cmd2.offsets[0] = 0;
+        cmd2.offsets[1] = cmd2.pitches[0] * cmd2.height;
+    }
+
+    if ((ret = drmIoctl(device()->fd(), DRM_IOCTL_MODE_ADDFB2, &cmd2))) {
+        qWarning() << "Failed to DRM_IOCTL_MODE_ADDFB2" << bo << gem_handle;
+        return 0;
+    }
+
+    uint32_t fb = cmd2.fb_id;
+
+    struct drm_gem_close gem_close = {};
+    gem_close.handle = gem_handle;
+    if (drmIoctl(device()->fd(), DRM_IOCTL_GEM_CLOSE, &gem_close)) {
+        qWarning() << "Failed to DRM_IOCTL_GEM_CLOSE" << bo << gem_handle;
+        return 0;
+    }
+
+    return fb;
 }
 
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
@@ -512,19 +528,6 @@ void WebOSEglFSKmsGbmScreen::setOverlayBufferObject(void *bo, QRectF rect, uint3
     m_bufferObjects[zpos] = BufferObject((gbm_bo *)bo, rect, true);
 }
 #else
-void WebOSEglFSKmsGbmScreen::clearBufferObject(uint32_t zpos)
-{
-    // In GUI thread
-    QMutexLocker lock(&m_bufferObjectMutex);
-
-    if (m_bufferObjects[zpos].updated) {
-        gbm_bo *old_bo = m_bufferObjects[zpos].gbo;
-        m_bufferObjects[zpos].gbo = nullptr;
-        qDebug() << "destroy old bo" << old_bo;
-        gbm_bo_destroy(old_bo);
-    }
-}
-
 void WebOSEglFSKmsGbmScreen::setOverlayBufferObject(void *bo, QRectF rect, uint32_t zpos)
 {
     qDebug() << "WebOSEglFSKmsGbmScreen::setOverlayPlaneFramebuffer:" << bo << name() << rect << zpos;
@@ -603,6 +606,19 @@ bool WebOSEglFSKmsGbmScreen::removeLayer(int zpos)
     // Use previous geometry rect
     setOverlayBufferObject(nullptr, QRectF(), zpos);
     return true;
+}
+
+void WebOSEglFSKmsGbmScreen::clearBufferObject(uint32_t zpos)
+{
+    // In GUI thread
+    QMutexLocker lock(&m_bufferObjectMutex);
+
+    if (m_bufferObjects[zpos].updated) {
+        gbm_bo *old_bo = m_bufferObjects[zpos].gbo;
+        m_bufferObjects[zpos].gbo = nullptr;
+        qDebug() << "destroy old bo" << old_bo;
+        gbm_bo_destroy(old_bo);
+    }
 }
 #endif
 

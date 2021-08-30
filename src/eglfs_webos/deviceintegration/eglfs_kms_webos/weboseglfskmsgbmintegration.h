@@ -41,14 +41,15 @@ public:
     WebOSEglFSKmsGbmIntegration();
     QKmsScreenConfig *createScreenConfig() override;
 
-#ifdef PLANE_COMPOSITION
     void screenInit() override;
 
-    static void setOverlayBufferObject(const QScreen *screen, void *bo, QRectF rect, uint32_t zpos);
     QFunctionPointer platformFunction(const QByteArray &function) const override;
     void *nativeResourceForIntegration(const QByteArray &name) override;
 
     QKmsDevice *createDevice() override;
+
+#ifdef PLANE_COMPOSITION
+    static void setOverlayBufferObject(const QScreen *screen, void *bo, QRectF rect, uint32_t zpos);
 #endif
 
 private:
@@ -79,6 +80,7 @@ struct WebOSKmsOutput {
     // z-pos, plane
     QMap<uint32_t, QKmsPlane> m_assignedPlanes;
 };
+#endif
 
 class WebOSEglFSKmsGbmDevice : public QEglFSKmsGbmDevice
 {
@@ -90,6 +92,7 @@ public:
 
     QPlatformScreen *createScreen(const QKmsOutput &output) override;
 
+#ifdef PLANE_COMPOSITION
     void addPlaneProperties();
     void assignPlanes(const QKmsOutput &output);
 
@@ -101,9 +104,10 @@ private:
     QMap<uint32_t, WebOSKmsPlane> m_webosPlanes;
     // connector_id, WebOSKmsOutput
     QMap<uint32_t, WebOSKmsOutput> m_webosOutputs;
+#endif
 };
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(PLANE_COMPOSITION)
 class WebOSEglFSKmsGbmScreen : public QEglFSKmsGbmScreen, public QNativeInterface::Private::QWebOSScreen
 #else
 class WebOSEglFSKmsGbmScreen : public QEglFSKmsGbmScreen
@@ -112,8 +116,9 @@ class WebOSEglFSKmsGbmScreen : public QEglFSKmsGbmScreen
 public:
     WebOSEglFSKmsGbmScreen(QEglFSKmsDevice *device, const QKmsOutput &output, bool headless);
 
-    void flip() override;
     void updateFlipStatus() override;
+    void flip() override;
+#ifdef PLANE_COMPOSITION
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     uint32_t gbmFlags() override;
 #endif
@@ -151,7 +156,7 @@ private:
 
     void (*m_flipCb)() = nullptr;
     QVector<bool> m_layerAdded;
-};
 #endif
+};
 
 #endif
