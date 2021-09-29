@@ -32,7 +32,11 @@
 
 static QMutex s_frameBufferMutex;
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+static void(*page_flip_notifier)(void* key, unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec) = nullptr;
+#else
 static void(*page_flip_notifier)(void* key) = nullptr;
+#endif
 
 WebOSKmsScreenConfig::WebOSKmsScreenConfig(QJsonObject config)
     : QKmsScreenConfig()
@@ -278,9 +282,10 @@ WebOSEglFSKmsGbmScreen::WebOSEglFSKmsGbmScreen(QEglFSKmsDevice *device, const QK
 
 void WebOSEglFSKmsGbmScreen::updateFlipStatus()
 {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     if (page_flip_notifier)
             (*page_flip_notifier)(this);
-
+#endif
     QEglFSKmsGbmScreen::updateFlipStatus();
 
 #ifdef PLANE_COMPOSITION
@@ -305,6 +310,14 @@ void WebOSEglFSKmsGbmScreen::updateFlipStatus()
         m_flipCb();
 #endif
 }
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+void WebOSEglFSKmsGbmScreen::pageFlipped(unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec)
+{
+    if (page_flip_notifier)
+        (*page_flip_notifier)(this, sequence, tv_sec, tv_usec);
+}
+#endif
 
 void WebOSEglFSKmsGbmScreen::flip()
 {
