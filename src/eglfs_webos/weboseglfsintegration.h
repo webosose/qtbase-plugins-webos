@@ -70,7 +70,6 @@ public:
     void removeTouchDevice(const QString &deviceNode);
     void arrangeKbdDevices();
     void removeKbdDevice(const QString &deviceNode);
-#if not defined(EMULATOR)
     QPlatformWindow *createPlatformWindow(QWindow *window) const override;
 
 public slots:
@@ -80,7 +79,6 @@ public slots:
 
 signals:
     void platformWindowCreated(QWindow *) const;
-#endif
 #endif
 
 private:

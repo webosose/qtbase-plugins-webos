@@ -148,6 +148,77 @@ void WebOSEglFSIntegration::createInputHandlers()
     if ((m_emulatorKeyboardManager) && (m_emulatorMouseManager)) {
         connect(m_emulatorKeyboardManager, &QEmulatorKeyboardManager::handleKeycodeSignal, m_emulatorMouseManager, &QEmulatorMouseManager::handleKeycodeSlot);
     }
+
+    // HACK: implement virtual touch for emulator.
+    QOutputMapping::set(&m_mappingHelper);
+
+    if (!m_configJson.isEmpty()) {
+        for (int i = 0; i < m_configJson.array().size(); i++) {
+            const QJsonObject object = m_configJson.array().at(i).toObject();
+            const QJsonArray outputs = object.value(QLatin1String("outputs")).toArray();
+            for (int j = 0; j < outputs.size(); j++) {
+                const QJsonObject output = outputs.at(j).toObject();
+                if (!m_useFixedAssociationForTouch) {
+                    QString touchDevice = output.value(QLatin1String("touchDevice")).toString();
+                    if (!touchDevice.isEmpty())
+                        m_useFixedAssociationForTouch = true;
+                }
+
+                const QVariantMap outputSettings = outputs.at(j).toObject().toVariantMap();
+                if (outputSettings.contains(QStringLiteral("name"))) {
+                    const QString name = outputSettings.value(QStringLiteral("name")).toString();
+                    if (m_outputSettings.contains(name))
+                        qWarning() << "Output" << name << "is duplicated";
+                    m_outputSettings.insert(name, outputSettings);
+                }
+            }
+        }
+    }
+
+    qDebug() << "useFixedAssociationForTouch:" << m_useFixedAssociationForTouch;
+
+    m_touchDiscovery = WebOSDeviceDiscoveryUDevSorted::create(QDeviceDiscovery::Device_Touchpad | QDeviceDiscovery::Device_Touchscreen, this);
+
+    QStringList scannedTouchDevices = m_touchDiscovery->scanConnectedDevices();
+    if (m_useFixedAssociationForTouch)
+        prepareFixedOutputMapping(scannedTouchDevices, QLatin1String("touchDevice"));
+    else
+        prepareOutputMapping(scannedTouchDevices);
+
+    QString touchDevs = initializeDevices(scannedTouchDevices);
+
+    bool useDummyTouchDevice = false;
+    // to disable device discovery in QEvdevTouchManager when no device is connected.
+    if (touchDevs.isEmpty()) {
+        touchDevs = "/dev/null";
+        useDummyTouchDevice = true;
+    }
+
+    QString env = QString::fromLocal8Bit(qgetenv("QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS"));
+    qDebug() << "createInputHandlers, touchDevs" << touchDevs << env;
+    if (!env.isEmpty()) {
+        env.append(":" + touchDevs);
+        qWarning() << "Updating QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS to" << env;
+        qputenv("QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS", env.toUtf8());
+    }
+
+    m_touchMgr = new QEvdevTouchManager(QLatin1String("EvdevTouch"), touchDevs, this);
+    // Remove the null device to prevent reading it
+    if (m_touchMgr && useDummyTouchDevice)
+        m_touchMgr->removeDevice("/dev/null");
+
+    if (m_touchDiscovery && m_touchMgr) {
+        connect(m_touchDiscovery, &QDeviceDiscovery::deviceDetected,
+                this, &WebOSEglFSIntegration::arrangeTouchDevices);
+        connect(m_touchDiscovery, &QDeviceDiscovery::deviceRemoved,
+                this, &WebOSEglFSIntegration::removeTouchDevice);
+    }
+
+    connect(this, &WebOSEglFSIntegration::platformWindowCreated, this, &WebOSEglFSIntegration::handleWindowCreated);
+
+    m_initTimer.setSingleShot(true);
+    connect(&m_initTimer, &QTimer::timeout, this, &WebOSEglFSIntegration::updateWindowMapping);
+    // End of HACK:
 }
 #else
 void WebOSEglFSIntegration::createInputHandlers()
