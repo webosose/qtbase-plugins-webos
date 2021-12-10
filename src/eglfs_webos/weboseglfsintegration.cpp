@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021 LG Electronics, Inc.
+// Copyright (c) 2020-2022 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 #include <QJsonObject>
 #include <QFile>
 
+#include <QtGui/private/qguiapplication_p.h>
 #include <QtGui/private/qhighdpiscaling_p.h>
 
 #include "webosdevicediscovery_udev_sorted_p.h"
@@ -47,6 +48,9 @@ QString WebOSOutputMapping::screenNameForDeviceNode(const QString &deviceNode)
 QWindow *WebOSOutputMapping::windowForDeviceNode(const QString &deviceNode)
 {
     QWindow *window =  m_mapping.value(deviceNode);
+
+    if (!window)
+        window = QGuiApplicationPrivate::currentMouseWindow;
 
     qDebug() << "windowForDeviceNode" << deviceNode << window;
 
@@ -92,6 +96,13 @@ WebOSEglFSIntegration::WebOSEglFSIntegration()
     } else {
         qWarning("No config file given");
     }
+
+    bool ok = false;
+    int ret = qEnvironmentVariableIntValue("QT_QPA_EVDEV_DISABLE_KBD_OUTPUT_MAPPING", &ok);
+    if (ok)
+        m_disableKbdOutputMapping = (ret != 0);
+
+    qDebug() << "disableOutputMapping:" << m_disableKbdOutputMapping;
 }
 
 QString WebOSEglFSIntegration::initializeDevices(QStringList devices)
@@ -146,8 +157,12 @@ void WebOSEglFSIntegration::createInputHandlers()
                 }
                 if (!m_useFixedAssociationForKeyboard) {
                     QString keyboardDevice = output.value(QLatin1String("keyboardDevice")).toString();
-                    if (!keyboardDevice.isEmpty())
-                        m_useFixedAssociationForKeyboard = true;
+                    if (!keyboardDevice.isEmpty()) {
+                        if (m_disableKbdOutputMapping)
+                            qWarning() << "Unset QT_QPA_EVDEV_DISABLE_KBD_OUTPUT_MAPPING to use fixed keyboard mapping";
+                        else
+                            m_useFixedAssociationForKeyboard = true;
+                    }
                 }
 
                 const QVariantMap outputSettings = outputs.at(j).toObject().toVariantMap();
@@ -204,10 +219,12 @@ void WebOSEglFSIntegration::createInputHandlers()
     m_kbdDiscovery = WebOSDeviceDiscoveryUDevSorted::create(QDeviceDiscovery::Device_Keyboard, this);
 
     QStringList scannedKbdDevices = m_kbdDiscovery->scanConnectedDevices();
-    if (m_useFixedAssociationForKeyboard)
-        prepareFixedOutputMapping(scannedKbdDevices, QLatin1String("keyboardDevice"));
-    else
-        prepareOutputMapping(scannedKbdDevices);
+    if (!m_disableKbdOutputMapping) {
+        if (m_useFixedAssociationForKeyboard)
+            prepareFixedOutputMapping(scannedKbdDevices, QLatin1String("keyboardDevice"));
+        else
+            prepareOutputMapping(scannedKbdDevices);
+    }
 
     QString kbdDevs = initializeDevices(scannedKbdDevices);
 
@@ -367,12 +384,21 @@ void WebOSEglFSIntegration::arrangeKbdDevices()
 
     const QStringList devices = m_kbdDiscovery->scanConnectedDevices();
 
-    if (m_useFixedAssociationForKeyboard)
-        prepareFixedOutputMapping(devices, QLatin1String("keyboardDevice"));
-    else
-        prepareOutputMapping(devices);
+    if (!m_disableKbdOutputMapping) {
+        if (m_useFixedAssociationForKeyboard)
+            prepareFixedOutputMapping(devices, QLatin1String("keyboardDevice"));
+        else
+            prepareOutputMapping(devices);
+    }
 
     for (int i = 0; i < devices.size(); i++) {
+        if (m_disableKbdOutputMapping) {
+            // To ensure there is no identical device
+            m_kbdMgr->removeKeyboard(devices[i]);
+            m_kbdMgr->addKeyboard(devices[i]);
+            continue;
+        }
+
         QString screenName = m_mappingHelper.screenNameForDeviceNode(devices[i]);
 
         if (!m_currentMapping.contains(devices[i])) {
@@ -397,8 +423,10 @@ void WebOSEglFSIntegration::removeKbdDevice(const QString &deviceNode)
     if (!m_kbdMgr)
         return;
 
-    m_currentMapping.remove(deviceNode);
-    m_mappingHelper.removeDevice(deviceNode);
+    if (!m_disableKbdOutputMapping) {
+        m_currentMapping.remove(deviceNode);
+        m_mappingHelper.removeDevice(deviceNode);
+    }
     m_kbdMgr->removeKeyboard(deviceNode);
 
     arrangeKbdDevices();

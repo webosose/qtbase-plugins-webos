@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021 LG Electronics, Inc.
+// Copyright (c) 2020-2022 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -91,6 +91,7 @@ private:
     WebOSOutputMapping m_mappingHelper;
 
     QJsonDocument m_configJson;
+    bool m_disableKbdOutputMapping = false;
     bool m_useFixedAssociationForTouch = false;
     bool m_useFixedAssociationForKeyboard = false;
     QMap<QString, QVariantMap> m_outputSettings;
