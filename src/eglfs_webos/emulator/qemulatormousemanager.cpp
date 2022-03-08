@@ -261,7 +261,20 @@ void QEmulatorMouseManager::handleMouseEvent(int x, int y, bool abs, Qt::MouseBu
 void QEmulatorMouseManager::handleWheelEvent(QPoint delta)
 {
     QPoint pos(m_x + m_xoffset, m_y + m_yoffset);
+#if !defined(EMULATOR)
     QWindowSystemInterface::handleWheelEvent(0, pos, pos, QPoint(), delta, QGuiApplicationPrivate::inputDeviceManager()->keyboardModifiers());
+#else
+    // In emulator, we don't have touch screen and we use mouse as input of both mouse and touch input.
+    // So we made 2 mode(mouse mode, touch simulation mode).Default is touch simulation mode. You can change mouse mode via left Alt key.
+    // Touch simulation mode means that we covert mouse event into touch event.
+    // If we use mouse wheel and touch input together, wheel is not working correctly.
+    // So we disable mouse wheel on touch simulation mode, only process mouse wheel on touch mode.
+    if (!m_isTouch) {//mouse mode
+        QWindowSystemInterface::handleWheelEvent(0, pos, pos, QPoint(), delta, QGuiApplicationPrivate::inputDeviceManager()->keyboardModifiers());
+    } else{//touch simulation mode
+        qWarning("In emulator, no process WheelEvent on touch simulation mode");
+    }
+#endif
 }
 
 void QEmulatorMouseManager::addMouse(const QString &deviceNode)
