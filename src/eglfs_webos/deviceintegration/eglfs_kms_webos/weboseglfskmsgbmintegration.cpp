@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021 LG Electronics, Inc.
+// Copyright (c) 2020-2022 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -123,9 +123,11 @@ void *WebOSEglFSKmsGbmIntegration::nativeResourceForIntegration(const QByteArray
     if (name == QByteArrayLiteral("gbm_device") && m_device)
         return (void *) static_cast<QEglFSKmsGbmDevice *>(m_device)->gbmDevice();
 
+#if !defined(EMULATOR)
     if (name == QByteArrayLiteral("dri_address_of_page_flip_notifier") && m_device)
         // return pointer to function "page_flip_notifier"
         return (void*)&page_flip_notifier;
+#endif
 
     return QEglFSKmsIntegration::nativeResourceForIntegration(name);
 }
