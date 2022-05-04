@@ -24,6 +24,7 @@
 #include <qpa/qplatformwindow.h>
 
 #include "weboseglfskmsgbmintegration.h"
+#include "weboseglfskmsgbmwindow.h"
 
 #ifdef PLANE_COMPOSITION
 #include <gbm.h>
@@ -130,6 +131,11 @@ void *WebOSEglFSKmsGbmIntegration::nativeResourceForIntegration(const QByteArray
 #endif
 
     return QEglFSKmsIntegration::nativeResourceForIntegration(name);
+}
+
+QEglFSWindow *WebOSEglFSKmsGbmIntegration::createWindow(QWindow *window) const
+{
+    return new WebOSEglFSKmsGbmWindow(window, this);
 }
 
 QKmsDevice *WebOSEglFSKmsGbmIntegration::createDevice()
@@ -273,6 +279,7 @@ void WebOSEglFSKmsGbmDevice::assignPlanes(const QKmsOutput &output)
 
 WebOSEglFSKmsGbmScreen::WebOSEglFSKmsGbmScreen(QEglFSKmsDevice *device, const QKmsOutput &output, bool headless)
     : QEglFSKmsGbmScreen(device, output, headless)
+    , m_dpr(-1.0)
 {
 #ifdef PLANE_COMPOSITION
     m_bufferObjects.resize(Plane_End);
@@ -280,6 +287,75 @@ WebOSEglFSKmsGbmScreen::WebOSEglFSKmsGbmScreen(QEglFSKmsDevice *device, const QK
     m_currentBufferObjects.resize(Plane_End);
     m_layerAdded.resize(Plane_End);
 #endif
+}
+
+qreal WebOSEglFSKmsGbmScreen::getDevicePixelRatio()
+{
+    if (!qFuzzyCompare(m_dpr, -1.0))
+        return m_dpr;
+
+    QByteArray env = qgetenv("WEBOS_DEVICE_PIXEL_RATIO");
+    if (!env.isEmpty()) {
+        // Override devicePixelRatio if WEBOS_DEVICE_PIXEL_RATIO is set
+        // Valid values are:
+        // 1) WEBOS_DEVICE_PIXEL_RATIO=auto
+        // 2) WEBOS_DEVICE_PIXEL_RATIO=<ratio>
+        if (env.startsWith("auto") && geometry().isValid()) {
+            QRect ssg = geometry();
+            QRect awg = applicationWindowGeometry();
+            if (awg.width() <= 0 && awg.height() <= 0)
+                m_dpr = QPlatformScreen::devicePixelRatio();
+            else if (awg.width() <= 0)
+                m_dpr = (qreal)ssg.height()/awg.height();
+            else if (awg.height() <= 0)
+                m_dpr = (qreal)ssg.width()/awg.width();
+            else {
+                m_dpr = qMin((qreal)ssg.width()/awg.width(),
+                             (qreal)ssg.height()/awg.height());
+            }
+            qInfo() << "set auto devicePixelRatio as dpr=" << m_dpr
+                    << "screen=" << ssg << ", window=" << awg;
+            return m_dpr;
+        }
+
+        double ratio = env.toDouble();
+        if (ratio > 0) {
+            m_dpr = (qreal) ratio;
+            qInfo() << "set WEBOS_DEVICE_PIXEL_RATIO devicePixelRatio as dpr=" << m_dpr;
+            return m_dpr;
+        }
+    }
+
+    m_dpr = QPlatformScreen::devicePixelRatio();
+    qInfo() << "set default devicePixelRatio as dpr=" << m_dpr;
+    return m_dpr;
+}
+
+qreal WebOSEglFSKmsGbmScreen::getDevicePixelRatio() const
+{
+    return const_cast<WebOSEglFSKmsGbmScreen*>(this)->getDevicePixelRatio();
+}
+
+QDpi WebOSEglFSKmsGbmScreen::logicalDpi() const
+{
+    qreal dpr = getDevicePixelRatio();
+    QDpi baseDpi = logicalBaseDpi();
+
+    return QDpi(baseDpi.first * dpr, baseDpi.second * dpr);
+}
+
+QRect WebOSEglFSKmsGbmScreen::applicationWindowGeometry() const
+{
+    if (!qEnvironmentVariableIsEmpty("WEBOS_COMPOSITOR_GEOMETRY")) {
+        // Syntax: WIDTH[x]HEIGHT[+/-]X[+/-]Y[r]ROTATION[s]RATIO
+        QRegularExpression re("([0-9]+)x([0-9]+)([+-][0-9]+)([+-][0-9]+)r([0-9]+)s([0-9]+.?[0-9]*)");
+        QRegularExpressionMatch match = re.match(QString(qgetenv("WEBOS_COMPOSITOR_GEOMETRY")));
+        if (match.hasMatch())
+            return QRect(0, 0, match.captured(1).toInt(), match.captured(2).toInt());
+    }
+
+    qCritical() << "failure in getting application window geometry=" << QRect();
+    return QRect();
 }
 
 void WebOSEglFSKmsGbmScreen::updateFlipStatus()

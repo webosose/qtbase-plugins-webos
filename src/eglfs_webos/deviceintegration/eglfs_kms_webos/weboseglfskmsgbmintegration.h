@@ -46,6 +46,7 @@ public:
     QFunctionPointer platformFunction(const QByteArray &function) const override;
     void *nativeResourceForIntegration(const QByteArray &name) override;
 
+    QEglFSWindow *createWindow(QWindow *window) const override;
     QKmsDevice *createDevice() override;
 
 #ifdef PLANE_COMPOSITION
@@ -116,6 +117,11 @@ class WebOSEglFSKmsGbmScreen : public QEglFSKmsGbmScreen
 public:
     WebOSEglFSKmsGbmScreen(QEglFSKmsDevice *device, const QKmsOutput &output, bool headless);
 
+    QDpi logicalDpi() const override;
+    qreal getDevicePixelRatio();
+    qreal getDevicePixelRatio() const;
+    QRect applicationWindowGeometry() const;
+
     void updateFlipStatus() override;
     void flip() override;
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
@@ -159,7 +165,9 @@ private:
 
     void (*m_flipCb)() = nullptr;
     QVector<bool> m_layerAdded;
-#endif
+#endif //PLANE_COMPOSITION
+private:
+    qreal m_dpr;
 };
 
 #endif

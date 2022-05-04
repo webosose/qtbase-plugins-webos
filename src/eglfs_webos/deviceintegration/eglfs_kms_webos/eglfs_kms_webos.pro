@@ -45,9 +45,11 @@ egl_protected_content {
 }
 
 SOURCES += $$PWD/weboseglfskmsgbmmain.cpp \
-           $$PWD/weboseglfskmsgbmintegration.cpp
+           $$PWD/weboseglfskmsgbmintegration.cpp \
+           $$PWD/weboseglfskmsgbmwindow.cpp
 
-HEADERS += $$PWD/weboseglfskmsgbmintegration.h
+HEADERS += $$PWD/weboseglfskmsgbmintegration.h \
+           $$PWD/weboseglfskmsgbmwindow.h
 
 OTHER_FILES += $$PWD/eglfs_kms_webos.json
 
