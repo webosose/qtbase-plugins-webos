@@ -89,9 +89,10 @@ QStringList WebOSDeviceDiscoveryUDevSorted::scanConnectedDevices()
         udev_enumerate_add_match_property(ue, "ID_INPUT_TOUCHPAD", "1");
     if (m_types & Device_Touchscreen)
         udev_enumerate_add_match_property(ue, "ID_INPUT_TOUCHSCREEN", "1");
-    if (m_types & Device_Keyboard)
+    if (m_types & Device_Keyboard) {
         udev_enumerate_add_match_property(ue, "ID_INPUT_KEYBOARD", "1");
-
+        udev_enumerate_add_match_property(ue, "ID_INPUT_KEY", "1");
+    }
     QStringList devices;
 
     if (udev_enumerate_scan_devices(ue) != 0) {
@@ -119,6 +120,10 @@ QStringList WebOSDeviceDiscoveryUDevSorted::scanConnectedDevices()
             }
             if (m_types & Device_Keyboard) {
                 const char* property = udev_device_get_property_value(udevice, "ID_INPUT_KEYBOARD");
+                if (property && strcmp(property, "1") == 0)
+                    match = true;
+
+                property = udev_device_get_property_value(udevice, "ID_INPUT_KEY");
                 if (property && strcmp(property, "1") == 0)
                     match = true;
             }
