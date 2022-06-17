@@ -24,16 +24,3 @@ WebOSEglFSKmsGbmWindow::WebOSEglFSKmsGbmWindow(QWindow* window, const QEglFSKmsG
 {
 
 }
-
-// Overrides eglfs. Need to consider upstream change
-void WebOSEglFSKmsGbmWindow::setGeometry(const QRect &r)
-{
-    QRect rect = r;
-    QPlatformWindow::setGeometry(rect);
-
-    QWindowSystemInterface::handleGeometryChange(window(), rect);
-
-    const QRect lastReportedGeometry = qt_window_private(window())->geometry;
-    if (rect != lastReportedGeometry)
-        QWindowSystemInterface::handleExposeEvent(window(), QRect(QPoint(0, 0), rect.size()));
-}

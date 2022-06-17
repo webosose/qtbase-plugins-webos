@@ -25,7 +25,6 @@ class WebOSEglFSKmsGbmWindow : public QEglFSKmsGbmWindow
 {
 public:
     WebOSEglFSKmsGbmWindow(QWindow *, const QEglFSKmsGbmIntegration *);
-    void setGeometry(const QRect &r) override;
 };
 
 #endif
