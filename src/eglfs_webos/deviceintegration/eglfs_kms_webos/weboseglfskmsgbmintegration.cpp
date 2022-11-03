@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2022 LG Electronics, Inc.
+// Copyright (c) 2020-2023 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@
 #include <QJsonArray>
 #include <QScreen>
 #include <QWindow>
+#include <QRegularExpression>
 
 #include <QtDeviceDiscoverySupport/private/qdevicediscovery_p.h>
 #include <qpa/qplatformwindow.h>
@@ -339,7 +340,11 @@ qreal WebOSEglFSKmsGbmScreen::getDevicePixelRatio() const
 QDpi WebOSEglFSKmsGbmScreen::logicalDpi() const
 {
     qreal dpr = getDevicePixelRatio();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 4, 0)
     QDpi baseDpi = logicalBaseDpi();
+#else
+    QDpi baseDpi = QEglFSKmsGbmScreen::logicalDpi();
+#endif
 
     return QDpi(baseDpi.first * dpr, baseDpi.second * dpr);
 }
