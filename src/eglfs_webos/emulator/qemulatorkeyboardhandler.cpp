@@ -123,7 +123,10 @@ void QEmulatorKeyboardHandler::switchLed(int led, bool state)
     qWarning() << "switchLed" << led << state;
 
     struct ::input_event led_ie;
-    ::gettimeofday(&led_ie.time, 0);
+    struct ::timeval curtime;
+    ::gettimeofday(&curtime, 0);
+    led_ie.input_event_sec = curtime.tv_sec;
+    led_ie.input_event_usec = curtime.tv_usec;
     led_ie.type = EV_LED;
     led_ie.code = led;
     led_ie.value = state;
