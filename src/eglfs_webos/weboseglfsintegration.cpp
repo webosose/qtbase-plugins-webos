@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2022 LG Electronics, Inc.
+// Copyright (c) 2020-2023 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -143,6 +143,7 @@ void WebOSEglFSIntegration::createInputHandlers()
 void WebOSEglFSIntegration::createInputHandlers()
 {
     QOutputMapping::set(&m_mappingHelper);
+    QString env;
 
     if (!m_configJson.isEmpty()) {
         for (int i = 0; i < m_configJson.array().size(); i++) {
@@ -181,78 +182,82 @@ void WebOSEglFSIntegration::createInputHandlers()
 
     m_touchDiscovery = WebOSDeviceDiscoveryUDevSorted::create(QDeviceDiscovery::Device_Touchpad | QDeviceDiscovery::Device_Touchscreen, this);
 
-    QStringList scannedTouchDevices = m_touchDiscovery->scanConnectedDevices();
-    if (m_useFixedAssociationForTouch)
-        prepareFixedOutputMapping(scannedTouchDevices, QLatin1String("touchDevice"));
-    else
-        prepareOutputMapping(scannedTouchDevices);
+    if (m_touchDiscovery) {
+        QStringList scannedTouchDevices = m_touchDiscovery->scanConnectedDevices();
+        if (m_useFixedAssociationForTouch)
+            prepareFixedOutputMapping(scannedTouchDevices, QLatin1String("touchDevice"));
+        else
+            prepareOutputMapping(scannedTouchDevices);
 
-    QString touchDevs = initializeDevices(scannedTouchDevices);
+        QString touchDevs = initializeDevices(scannedTouchDevices);
 
-    bool useDummyTouchDevice = false;
-    // HACK: to disable device discovery in QEvdevTouchManager when no device is connected.
-    if (touchDevs.isEmpty()) {
-        touchDevs = "/dev/null";
-        useDummyTouchDevice = true;
-    }
+        bool useDummyTouchDevice = false;
+        // HACK: to disable device discovery in QEvdevTouchManager when no device is connected.
+        if (touchDevs.isEmpty()) {
+            touchDevs = "/dev/null";
+            useDummyTouchDevice = true;
+        }
 
-    QString env = QString::fromLocal8Bit(qgetenv("QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS"));
-    qDebug() << "createInputHandlers, touchDevs" << touchDevs << env;
-    if (!env.isEmpty()) {
-        env.append(":" + touchDevs);
-        qWarning() << "Updating QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS to" << env;
-        qputenv("QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS", env.toUtf8());
-    }
+        env = QString::fromLocal8Bit(qgetenv("QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS"));
+        qDebug() << "createInputHandlers, touchDevs" << touchDevs << env;
+        if (!env.isEmpty()) {
+            env.append(":" + touchDevs);
+            qWarning() << "Updating QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS to" << env;
+            qputenv("QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS", env.toUtf8());
+        }
 
-    m_touchMgr = new QEvdevTouchManager(QLatin1String("EvdevTouch"), touchDevs, this);
-    // HACK: Remove the null device to prevent reading it
-    if (m_touchMgr && useDummyTouchDevice)
-        m_touchMgr->removeDevice("/dev/null");
+        m_touchMgr = new QEvdevTouchManager(QLatin1String("EvdevTouch"), touchDevs, this);
+        // HACK: Remove the null device to prevent reading it
+        if (m_touchMgr && useDummyTouchDevice)
+            m_touchMgr->removeDevice("/dev/null");
 
-    if (m_touchDiscovery && m_touchMgr) {
-        connect(m_touchDiscovery, &QDeviceDiscovery::deviceDetected,
-                this, &WebOSEglFSIntegration::arrangeTouchDevices);
-        connect(m_touchDiscovery, &QDeviceDiscovery::deviceRemoved,
-                this, &WebOSEglFSIntegration::removeTouchDevice);
+        if (m_touchMgr) {
+            connect(m_touchDiscovery, &QDeviceDiscovery::deviceDetected,
+                    this, &WebOSEglFSIntegration::arrangeTouchDevices);
+            connect(m_touchDiscovery, &QDeviceDiscovery::deviceRemoved,
+                    this, &WebOSEglFSIntegration::removeTouchDevice);
+        }
     }
 
     m_kbdDiscovery = WebOSDeviceDiscoveryUDevSorted::create(QDeviceDiscovery::Device_Keyboard, this);
 
-    QStringList scannedKbdDevices = m_kbdDiscovery->scanConnectedDevices();
-    if (!m_disableKbdOutputMapping) {
-        if (m_useFixedAssociationForKeyboard)
-            prepareFixedOutputMapping(scannedKbdDevices, QLatin1String("keyboardDevice"));
-        else
-            prepareOutputMapping(scannedKbdDevices);
-    }
+    if (!m_kbdDiscovery) {
+        QStringList scannedKbdDevices = m_kbdDiscovery->scanConnectedDevices();
+        if (!m_disableKbdOutputMapping) {
+            if (m_useFixedAssociationForKeyboard)
+                prepareFixedOutputMapping(scannedKbdDevices, QLatin1String("keyboardDevice"));
+            else
+                prepareOutputMapping(scannedKbdDevices);
+        }
 
-    QString kbdDevs = initializeDevices(scannedKbdDevices);
+        QString kbdDevs = initializeDevices(scannedKbdDevices);
 
-    bool useDummyKbdDevice = false;
-    // HACK: to disable device discovery in QEvdevKeyboardManager when no device is connected.
-    if (kbdDevs.isEmpty()) {
-        kbdDevs = "/dev/null";
-        useDummyKbdDevice = true;
-    }
+        bool useDummyKbdDevice = false;
+        // HACK: to disable device discovery in QEvdevKeyboardManager when no device is connected.
+        if (kbdDevs.isEmpty()) {
+            kbdDevs = "/dev/null";
+            useDummyKbdDevice = true;
+        }
 
-    env = QString::fromLocal8Bit(qgetenv("QT_QPA_EVDEV_KEYBOARD_PARAMETERS"));
-    qDebug() << "createInputHandlers: kbdDevs" << kbdDevs << env;
-    if (!env.isEmpty()) {
-        env.append(":" + kbdDevs);
-        qWarning() << "Updating QT_QPA_EVDEV_KEYBOARD_PARAMETERS to" << env;
-        qputenv("QT_QPA_EVDEV_KEYBOARD_PARAMETERS", env.toUtf8());
-    }
+        env = QString::fromLocal8Bit(qgetenv("QT_QPA_EVDEV_KEYBOARD_PARAMETERS"));
+        qDebug() << "createInputHandlers: kbdDevs" << kbdDevs << env;
+        if (!env.isEmpty()) {
+            env.append(":" + kbdDevs);
+            qWarning() << "Updating QT_QPA_EVDEV_KEYBOARD_PARAMETERS to" << env;
+            qputenv("QT_QPA_EVDEV_KEYBOARD_PARAMETERS", env.toUtf8());
+        }
 
-    m_kbdMgr = new QEvdevKeyboardManager(QLatin1String("EvdevKeyboard"), kbdDevs, this);
-    // HACK: Remove the null device to prevent reading it
-    if (m_kbdMgr && useDummyKbdDevice)
-        m_kbdMgr->removeKeyboard("/dev/null");
+        m_kbdMgr = new QEvdevKeyboardManager(QLatin1String("EvdevKeyboard"), kbdDevs, this);
+        // HACK: Remove the null device to prevent reading it
+        if (m_kbdMgr && useDummyKbdDevice)
+            m_kbdMgr->removeKeyboard("/dev/null");
 
-    if (m_kbdDiscovery && m_kbdMgr) {
-        connect(m_kbdDiscovery, &QDeviceDiscovery::deviceDetected,
-                this, &WebOSEglFSIntegration::arrangeKbdDevices);
-        connect(m_kbdDiscovery, &QDeviceDiscovery::deviceRemoved,
-                this, &WebOSEglFSIntegration::removeKbdDevice);
+        if (m_kbdMgr) {
+            connect(m_kbdDiscovery, &QDeviceDiscovery::deviceDetected,
+                    this, &WebOSEglFSIntegration::arrangeKbdDevices);
+            connect(m_kbdDiscovery, &QDeviceDiscovery::deviceRemoved,
+                    this, &WebOSEglFSIntegration::removeKbdDevice);
+        }
     }
 
     m_mouseMgr = new QEvdevMouseManager(QLatin1String("EvdevMouse"), QString(), this);
