@@ -221,7 +221,7 @@ void WebOSEglFSIntegration::createInputHandlers()
 
     m_kbdDiscovery = WebOSDeviceDiscoveryUDevSorted::create(QDeviceDiscovery::Device_Keyboard, this);
 
-    if (!m_kbdDiscovery) {
+    if (m_kbdDiscovery) {
         QStringList scannedKbdDevices = m_kbdDiscovery->scanConnectedDevices();
         if (!m_disableKbdOutputMapping) {
             if (m_useFixedAssociationForKeyboard)
