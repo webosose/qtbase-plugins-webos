@@ -1,4 +1,4 @@
-// Copyright (c) 2022 LG Electronics, Inc.
+// Copyright (c) 2022-2023 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,10 +17,25 @@
 #include <qpa/qwindowsysteminterface.h>
 #include <private/qwindow_p.h>
 
+#ifdef IM_ENABLE
+#include "qstarfishinputmanager.h"
+#endif
+
 #include "weboseglfskmsgbmwindow.h"
 
 WebOSEglFSKmsGbmWindow::WebOSEglFSKmsGbmWindow(QWindow* window, const QEglFSKmsGbmIntegration *integration)
     : QEglFSKmsGbmWindow(window, integration)
 {
+}
 
+void WebOSEglFSKmsGbmWindow::requestActivateWindow()
+{
+    QEglFSKmsGbmWindow::requestActivateWindow();
+
+#ifdef IM_ENABLE
+    //This sequence makes sure that Top Window get focus
+    //so that it can receive key event.
+    qInfo() << "requestActivateWindow QStarfishInputManager::startInputService";
+    QStarfishInputManager::instance()->startInputService();
+#endif
 }

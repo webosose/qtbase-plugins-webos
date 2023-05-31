@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022 LG Electronics, Inc.
+# Copyright (c) 2020-2023 LG Electronics, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ PLUGIN_CLASS_NAME = WebOSEglFSKmsGbmIntegrationPlugin
 load(qt_plugin)
 
 QT += eglfs_kms_gbm_support-private eglfsdeviceintegration-private eglfs_kms_support-private kms_support-private devicediscovery_support-private
+
 equals(QT_MAJOR_VERSION, 5) {
     QT += edid_support-private
 } else {
@@ -55,4 +56,16 @@ OTHER_FILES += $$PWD/eglfs_kms_webos.json
 
 emulator {
     DEFINES += EMULATOR
+}
+
+inputmanager {
+    QT += starfishserviceintegration starfishinput
+
+    # TODO: These should be hidden from outside of libim
+    DEFINES += IM_ENABLE \
+               DEBUG_KEY_EVENT
+    INCLUDEPATH  += $$WEBOS_STAGING_INCDIR/im
+
+    CONFIG += link_pkgconfig
+    PKGCONFIG = glib-2.0 luna-service2
 }

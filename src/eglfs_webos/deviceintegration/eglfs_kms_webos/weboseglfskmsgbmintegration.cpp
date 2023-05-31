@@ -32,6 +32,10 @@
 #include <gbm_priv.h>
 #endif
 
+#ifdef IM_ENABLE
+#include "qstarfishimcursor.h"
+#endif
+
 static QMutex s_frameBufferMutex;
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
@@ -281,6 +285,9 @@ void WebOSEglFSKmsGbmDevice::assignPlanes(const QKmsOutput &output)
 WebOSEglFSKmsGbmScreen::WebOSEglFSKmsGbmScreen(QEglFSKmsDevice *device, const QKmsOutput &output, bool headless)
     : QEglFSKmsGbmScreen(device, output, headless)
     , m_dpr(-1.0)
+#ifdef IM_ENABLE
+    , m_cursor(new QStarfishIMCursor(device->fd(), output.crtc_id))
+#endif
 {
 #ifdef PLANE_COMPOSITION
     m_bufferObjects.resize(Plane_End);

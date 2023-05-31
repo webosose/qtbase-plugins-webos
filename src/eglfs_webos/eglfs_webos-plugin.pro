@@ -46,3 +46,7 @@ emulator {
     DEFINES += EMULATOR
     include($$PWD/emulator/emulator.pri)
 }
+
+inputmanager {
+    DEFINES += IM_ENABLE
+}

@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021 LG Electronics, Inc.
+// Copyright (c) 2020-2023 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -132,6 +132,12 @@ public:
     uint32_t gbmFlags() override;
 #endif
 
+#ifdef IM_ENABLE
+    QPlatformCursor *cursor() const override {
+        return m_cursor.get();
+    }
+#endif
+
     void setOverlayBufferObject(void *bo, QRectF rect, uint32_t zpos);
 
     struct BufferObject {
@@ -168,6 +174,9 @@ private:
 #endif //PLANE_COMPOSITION
 private:
     qreal m_dpr;
+#ifdef IM_ENABLE
+    QScopedPointer<QPlatformCursor> m_cursor;
+#endif
 };
 
 #endif

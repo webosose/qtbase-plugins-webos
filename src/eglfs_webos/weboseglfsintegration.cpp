@@ -300,6 +300,7 @@ void WebOSEglFSIntegration::createInputHandlers()
         }
     }
 
+#ifndef IM_ENABLE
     m_kbdDiscovery = WebOSDeviceDiscoveryUDevSorted::create(QDeviceDiscovery::Device_Keyboard, this);
 
     if (m_kbdDiscovery) {
@@ -342,7 +343,7 @@ void WebOSEglFSIntegration::createInputHandlers()
     }
 
     m_mouseMgr = new QEvdevMouseManager(QLatin1String("EvdevMouse"), QString(), this);
-
+#endif //IM_ENABLE
     connect(this, &WebOSEglFSIntegration::platformWindowCreated, this, &WebOSEglFSIntegration::handleWindowCreated);
 
     m_initTimer.setSingleShot(true);
