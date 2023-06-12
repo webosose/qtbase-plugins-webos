@@ -22,7 +22,13 @@ PLUGIN_CLASS_NAME = WebOSEglFSIntegrationPlugin
 
 load(qt_plugin)
 
-QT += eglfsdeviceintegration-private input_support-private devicediscovery_support-private fb_support-private
+QT += eglfsdeviceintegration-private devicediscovery_support-private fb_support-private
+
+qtConfig(evdev) {
+    QT += input_support-private
+    SOURCES += $$PWD/webosdevicediscovery_udev_sorted.cpp
+    HEADERS += $$PWD/webosdevicediscovery_udev_sorted_p.h
+}
 
 CONFIG += egl
 
@@ -30,11 +36,9 @@ CONFIG += egl
 DEFINES += QT_EGL_NO_X11
 
 SOURCES += $$PWD/weboseglfsmain.cpp \
-           $$PWD/weboseglfsintegration.cpp \
-           $$PWD/webosdevicediscovery_udev_sorted.cpp
+           $$PWD/weboseglfsintegration.cpp
 
-HEADERS += $$PWD/weboseglfsintegration.h \
-           $$PWD/webosdevicediscovery_udev_sorted_p.h
+HEADERS += $$PWD/weboseglfsintegration.h
 
 OTHER_FILES += $$PWD/eglfs_webos.json
 

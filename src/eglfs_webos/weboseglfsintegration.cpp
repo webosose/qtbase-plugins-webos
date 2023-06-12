@@ -23,7 +23,10 @@
 #include <QtGui/private/qguiapplication_p.h>
 #include <QtGui/private/qhighdpiscaling_p.h>
 
+#if QT_CONFIG(evdev)
 #include "webosdevicediscovery_udev_sorted_p.h"
+#endif
+
 #include "weboseglfsintegration.h"
 
 #if defined(EMULATOR)
@@ -31,6 +34,7 @@
 #include "qemulatorkeyboardmanager.h"
 #endif
 
+#if QT_CONFIG(evdev)
 QString WebOSOutputMapping::screenNameForDeviceNode(const QString &deviceNode)
 {
     QWindow *window =  m_mapping.value(deviceNode);
@@ -73,6 +77,7 @@ void WebOSOutputMapping::removeDevice(const QString &deviceNode)
 {
     m_mapping.remove(deviceNode);
 }
+#endif
 
 WebOSEglFSIntegration::WebOSEglFSIntegration()
     : QEglFSIntegration()
@@ -97,14 +102,17 @@ WebOSEglFSIntegration::WebOSEglFSIntegration()
         qWarning("No config file given");
     }
 
+#if QT_CONFIG(evdev)
     bool ok = false;
     int ret = qEnvironmentVariableIntValue("QT_QPA_EVDEV_DISABLE_KBD_OUTPUT_MAPPING", &ok);
     if (ok)
         m_disableKbdOutputMapping = (ret != 0);
 
     qDebug() << "disableOutputMapping:" << m_disableKbdOutputMapping;
+#endif
 }
 
+#if QT_CONFIG(evdev)
 QString WebOSEglFSIntegration::initializeDevices(QStringList devices)
 {
     for (int i = 0; i < devices.size(); i++) {
@@ -114,6 +122,7 @@ QString WebOSEglFSIntegration::initializeDevices(QStringList devices)
 
     return devices.join(QLatin1Char(':'));
 }
+#endif
 
 #if defined(EMULATOR)
 void WebOSEglFSIntegration::createInputHandlers()
@@ -139,7 +148,7 @@ void WebOSEglFSIntegration::createInputHandlers()
         connect(m_emulatorKeyboardManager, &QEmulatorKeyboardManager::handleKeycodeSignal, m_emulatorMouseManager, &QEmulatorMouseManager::handleKeycodeSlot);
     }
 }
-#else
+#elif QT_CONFIG(evdev)
 void WebOSEglFSIntegration::createInputHandlers()
 {
     QOutputMapping::set(&m_mappingHelper);
@@ -299,7 +308,6 @@ void WebOSEglFSIntegration::updateWindowMapping()
     arrangeTouchDevices();
     arrangeKbdDevices();
 }
-#endif
 
 void WebOSEglFSIntegration::prepareOutputMapping(const QStringList &devices)
 {
@@ -436,3 +444,4 @@ void WebOSEglFSIntegration::removeKbdDevice(const QString &deviceNode)
 
     arrangeKbdDevices();
 }
+#endif

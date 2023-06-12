@@ -23,14 +23,15 @@
 #include <qpa/qplatformservices.h>
 #include <QtFbSupport/private/qfbvthandler_p.h>
 #include <private/qeglfsintegration_p.h>
+#include <QTimer>
 
 #if QT_CONFIG(evdev)
 #include <QtInputSupport/private/qevdevmousemanager_p.h>
 #include <QtInputSupport/private/qevdevkeyboardmanager_p.h>
 #include <QtInputSupport/private/qevdevtouchmanager_p.h>
+#include <QtInputSupport/private/qoutputmapping_p.h>
 #endif
 
-#include <QtInputSupport/private/qoutputmapping_p.h>
 
 #if defined(EMULATOR)
 #include "qlinuxmouse.h"
@@ -38,6 +39,7 @@
 #include "qemulatormousemanager.h"
 #endif
 
+#if QT_CONFIG(evdev)
 class WebOSOutputMapping : public QOutputMapping
 {
 public:
@@ -51,12 +53,14 @@ public:
 private:
     QHash<QString, QWindow *> m_mapping;
 };
+#endif
 
 class WebOSEglFSIntegration : public QEglFSIntegration
 {
     Q_OBJECT
 public:
     WebOSEglFSIntegration();
+#if QT_CONFIG(evdev)
     void createInputHandlers() override;
 
     QString initializeDevices(QStringList devices);
@@ -77,11 +81,13 @@ public slots:
 signals:
     void platformWindowCreated(QWindow *) const;
 #endif
+#endif
 
 private:
     QVector<QWindow *> m_windows;
     QTimer m_initTimer;
 
+#if QT_CONFIG(evdev)
     QEvdevTouchManager *m_touchMgr = nullptr;
     QDeviceDiscovery *m_touchDiscovery = nullptr;
     QDeviceDiscovery *m_kbdDiscovery = nullptr;
@@ -89,6 +95,7 @@ private:
     QHash<QString, QString> m_currentMapping;
 
     WebOSOutputMapping m_mappingHelper;
+#endif
 
     QJsonDocument m_configJson;
     bool m_disableKbdOutputMapping = false;
