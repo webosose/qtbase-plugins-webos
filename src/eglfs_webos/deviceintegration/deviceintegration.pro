@@ -17,6 +17,8 @@
 TEMPLATE = subdirs
 
 CONFIG += ordered
-SUBDIRS += \
-    eglfs_kms_webos \
-    eglfs_starfish
+SUBDIRS += eglfs_kms_webos
+
+starfish {
+    SUBDIRS += eglfs_starfish
+}
