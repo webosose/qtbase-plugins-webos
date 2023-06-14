@@ -309,8 +309,22 @@ void EglFSStarfishIntegration::screenInit()
     }
 }
 
+void EglFSStarfishIntegration::onSnapshotBootDone()
+{
+    qInfo() << "EglFSStarfishIntegration::onSnapshotBootDone";
+    // This can be moved later, when starfish input can be included in snapshot boot
+#ifdef IM_ENABLE
+    //This sequence makes sure that Top Window get focus
+    //so that it can receive key event.
+    QStarfishInputManager::instance()->startInputService();
+#endif
+}
+
 QFunctionPointer EglFSStarfishIntegration::platformFunction(const QByteArray &function) const
 {
+    if (function == "snapshot-boot-done")
+        return QFunctionPointer(onSnapshotBootDone);
+
     return nullptr;
 }
 
@@ -331,9 +345,7 @@ void *EglFSStarfishIntegration::nativeResourceForIntegration(const QByteArray &n
     if (input_interface)
         return input_interface;
 
-    if (lowerCaseResource == "") {
-        ;
-    } else if (lowerCaseResource == "setscreenvisibledirectly") {
+    if (lowerCaseResource == "setscreenvisibledirectly") {
         return (void*)setScreenVisibleDirectly;
     } else if (lowerCaseResource == "setscreenpositiondirectly") {
         return (void*)setScreenPositionDirectly;

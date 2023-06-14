@@ -62,6 +62,7 @@ public:
     void updateScreenVisibleDirectly(EglFSStarfishScreen *screen, bool visible, const QString& policy);
     void onPowerStateChanged(const QStarfishPowerDBridge::State& state);
 
+    static void onSnapshotBootDone();
 private:
     class EglFSStarfishIntegrationPrivate* d_ptr;
     Q_DECLARE_PRIVATE(EglFSStarfishIntegration);
