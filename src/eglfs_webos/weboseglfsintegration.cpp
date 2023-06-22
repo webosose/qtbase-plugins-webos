@@ -124,6 +124,7 @@ QString WebOSEglFSIntegration::initializeDevices(QStringList devices)
 }
 #endif
 
+#if QT_CONFIG(evdev)
 #if defined(EMULATOR)
 void WebOSEglFSIntegration::createInputHandlers()
 {
@@ -148,7 +149,7 @@ void WebOSEglFSIntegration::createInputHandlers()
         connect(m_emulatorKeyboardManager, &QEmulatorKeyboardManager::handleKeycodeSignal, m_emulatorMouseManager, &QEmulatorMouseManager::handleKeycodeSlot);
     }
 }
-#elif QT_CONFIG(evdev)
+#else
 void WebOSEglFSIntegration::createInputHandlers()
 {
     QOutputMapping::set(&m_mappingHelper);
@@ -276,6 +277,7 @@ void WebOSEglFSIntegration::createInputHandlers()
     m_initTimer.setSingleShot(true);
     connect(&m_initTimer, &QTimer::timeout, this, &WebOSEglFSIntegration::updateWindowMapping);
 }
+#endif
 
 QPlatformWindow *WebOSEglFSIntegration::createPlatformWindow(QWindow *window) const
 {
