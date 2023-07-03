@@ -224,6 +224,7 @@ void EglFSStarfishScreenConfig::loadConfig()
 
     m_hwCursor = m_configJson.value(QLatin1String("hwcursor")).toBool(m_hwCursor);
     m_devicePath = m_configJson.value(QLatin1String("device")).toString();
+    m_connector = m_configJson.value(QLatin1String("connector")).toObject().toVariantMap();
 
     const QJsonArray outputs = m_configJson.value(QLatin1String("outputs")).toArray();
     m_outputSettings.clear();
@@ -621,8 +622,6 @@ void EglFSStarfishDevice::createStarfishScreens()
 
     discoverPlanes();
 
-    QList<OrderedScreen> screens;
-
     drmModeConnectorPtr connector = nullptr;
     for (int i = 0; i < resources->count_connectors; i++) {
         connector = drmModeGetConnector(m_dri_fd, resources->connectors[i]);
@@ -638,6 +637,7 @@ void EglFSStarfishDevice::createStarfishScreens()
     // [{
     //   "device": "/dev/dri/card0",
     //   "hwcursor": false,
+    //   "connector": {"mode":"1920x1080"},
     //   "outputs":[
     //     {"name":"fb0","geometry":"1920x1080+0+0r0s1", "primary": true},
     //     {"name":"fb1","geometry":"512x2160+0+0r0s1"}
@@ -651,6 +651,33 @@ void EglFSStarfishDevice::createStarfishScreens()
         qWarning() << "No usable crtc/encoder pair for connector" << connectorName;
         return;
     }
+
+    OutputConfiguration configuration;
+    QSize configurationSize;
+    int configurationRefresh = 0;
+    drmModeModeInfo configurationModeline;
+
+    // default to the preferred mode unless overridden in the config
+    EglFSStarfishScreenConfig* dp = static_cast<EglFSStarfishScreenConfig*>(m_screenConfig);
+    const QByteArray mode = dp->connector().value(QStringLiteral("mode"), QStringLiteral("preferred"))
+            .toByteArray().toLower();
+    if (mode == "preferred") {
+        configuration = OutputConfigPreferred;
+    } else if (mode == "current") {
+        configuration = OutputConfigCurrent;
+    } else if (sscanf(mode.constData(), "%dx%d@%d", &configurationSize.rwidth(), &configurationSize.rheight(),
+                      &configurationRefresh) == 3)
+    {
+        configuration = OutputConfigMode;
+    } else if (sscanf(mode.constData(), "%dx%d", &configurationSize.rwidth(), &configurationSize.rheight()) == 2) {
+        configuration = OutputConfigMode;
+    } else if (parseModeline(mode, &configurationModeline)) {
+        configuration = OutputConfigModeline;
+    } else {
+        qWarning("Invalid mode \"%s\" for output %s", mode.constData(), connectorName.constData());
+        configuration = OutputConfigPreferred;
+    }
+
     const uint32_t crtc = (unsigned int) crtcIdx;
     const uint32_t crtc_id = resources->crtcs[crtc];
 
@@ -683,13 +710,17 @@ void EglFSStarfishDevice::createStarfishScreens()
 
     int preferred = -1;
     int current = -1;
+    int configured = -1;
     int best = -1;
-
-    auto userConfig = m_screenConfig->outputSettings();
-    QVariantMap userConnectorConfig = userConfig.value(QString::fromUtf8(connectorName));
 
     for (int i = modes.size() - 1; i >= 0; i--) {
         const drmModeModeInfo &m = modes.at(i);
+
+        if (configuration == OutputConfigMode
+                && m.hdisplay == configurationSize.width()
+                && m.vdisplay == configurationSize.height()) {
+            configured = i;
+        }
 
         if (!memcmp(&crtc_mode, &m, sizeof m))
             current = i;
@@ -700,14 +731,24 @@ void EglFSStarfishDevice::createStarfishScreens()
         best = i;
     }
 
+    if (configuration == OutputConfigModeline) {
+        modes << configurationModeline;
+        configured = modes.size() - 1;
+    }
+
     if (current < 0 && crtc_mode.clock != 0) {
         modes << crtc_mode;
         current = modes.size() - 1;
     }
 
+    if (configuration == OutputConfigCurrent)
+        configured = current;
+
     int selected_mode = -1;
 
-    if (preferred >= 0)
+    if (configured >= 0)
+        selected_mode = configured;
+    else if (preferred >= 0)
         selected_mode = preferred;
     else if (current >= 0)
         selected_mode = current;
@@ -737,11 +778,14 @@ void EglFSStarfishDevice::createStarfishScreens()
                                                                       connectorNameForPrimary,
                                                                       crtc, selected_mode,
                                                                       modes);
+
+    QList<OrderedScreen> screens;
     if (primaryScreen)
         screens.append(OrderedScreen(primaryScreen, primaryInfo));
 
     QString connectorNameForSecondary(screenNames.at(1).split('/').last()); // fb1
     ScreenInfo secondaryInfo;
+    auto userConfig = m_screenConfig->outputSettings();
     if (userConfig.contains(connectorNameForSecondary)) {
         QPlatformScreen *secondaryScreen = createStarfishScreenForConnector(resources, connector, &secondaryInfo,
                                                                             connectorNameForSecondary,

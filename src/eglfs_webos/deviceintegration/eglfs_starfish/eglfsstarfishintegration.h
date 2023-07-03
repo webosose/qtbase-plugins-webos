@@ -37,8 +37,10 @@ public:
     EglFSStarfishScreenConfig(QJsonObject);
     void loadConfig() override;
 
+    QVariantMap connector() const { return m_connector; }
 private:
     QJsonObject m_configJson;
+    QVariantMap m_connector;
 };
 
 class EglFSStarfishIntegration : public QEglFSKmsGbmIntegration
