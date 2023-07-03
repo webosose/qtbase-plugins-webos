@@ -485,7 +485,7 @@ QVector<uint64_t> EglFSStarfishDevice::getGbmModifiersFromPlane(const QKmsOutput
 
             modifiers.append(mod->modifier);
 
-            qCDebug(qLcStarfishDebug, "Found modifier(0x%llx) for format(%c%c%c%c)\n",
+            qInfo("Found modifier(0x%llx) for format(%c%c%c%c)\n",
                     mod->modifier,
                     (_f>>0)&0xff, (_f>>8)&0xff, (_f>>16)&0xff, (_f>>24)&0xff);
         }
@@ -782,11 +782,38 @@ QPlatformScreen *EglFSStarfishDevice::createStarfishScreenForConnector(drmModeRe
     if (userConnectorConfig.value(QStringLiteral("primary")).toBool())
         vinfo->isPrimary = true;
 
-    // TODO: get format from config if necessary
-    // const QByteArray formatStr = userConnectorConfig.value(QStringLiteral("format"), QString())
-    //         .toByteArray().toLower();
-    uint32_t drmFormat = DRM_FORMAT_XRGB8888;
-    bool drmFormatExplicit = false;
+    const QByteArray formatStr = userConnectorConfig.value(QStringLiteral("format"), QString())
+        .toByteArray().toLower();
+    uint32_t drmFormat;
+    bool drmFormatExplicit = true;
+    if (formatStr.isEmpty()) {
+        drmFormat = DRM_FORMAT_XRGB8888;
+        drmFormatExplicit = false;
+    } else if (formatStr == "xrgb8888") {
+        drmFormat = DRM_FORMAT_XRGB8888;
+    } else if (formatStr == "xbgr8888") {
+        drmFormat = DRM_FORMAT_XBGR8888;
+    } else if (formatStr == "argb8888") {
+        drmFormat = DRM_FORMAT_ARGB8888;
+    } else if (formatStr == "abgr8888") {
+        drmFormat = DRM_FORMAT_ABGR8888;
+    } else if (formatStr == "rgb565") {
+        drmFormat = DRM_FORMAT_RGB565;
+    } else if (formatStr == "bgr565") {
+        drmFormat = DRM_FORMAT_BGR565;
+    } else if (formatStr == "xrgb2101010") {
+        drmFormat = DRM_FORMAT_XRGB2101010;
+    } else if (formatStr == "xbgr2101010") {
+        drmFormat = DRM_FORMAT_XBGR2101010;
+    } else if (formatStr == "argb2101010") {
+        drmFormat = DRM_FORMAT_ARGB2101010;
+    } else if (formatStr == "abgr2101010") {
+        drmFormat = DRM_FORMAT_ABGR2101010;
+    } else {
+        qWarning("Invalid pixel format \"%s\" for output %s", formatStr.constData(), connectorName.constData());
+        drmFormat = DRM_FORMAT_XRGB8888;
+        drmFormatExplicit = false;
+    }
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     qCDebug(qLcStarfishDebug) << "Format is" << Qt::hex << drmFormat << Qt::dec << "requested_by_user =" << drmFormatExplicit
@@ -918,8 +945,8 @@ gbm_surface *EglFSStarfishScreen::createSurface(EGLConfig eglConfig)
     qInfo() << "#### EglFSStarfishScreen::createSurface";
     // Copied from QEglFSKmsGbmScreen::createSurface
     if (!m_gbm_surface) {
-        qCDebug(qLcStarfishDebug) << "Creating gbm_surface for screen" << name()
-                                  << "with modifiers" << m_modifiers;
+        qInfo() << "Creating gbm_surface for screen" << name()
+              << "with modifiers" << m_modifiers;
 
         const auto gbmDevice = static_cast<QEglFSKmsGbmDevice *>(device())->gbmDevice();
         // If there was no format override given in the config file,
@@ -1166,6 +1193,42 @@ void EglFSStarfishScreen::flip()
 #if QT_CONFIG(drm_atomic)
     device()->threadLocalAtomicCommit(this);
 #endif
+}
+
+QEglFSKmsGbmScreen::FrameBuffer *EglFSStarfishScreen::framebufferForBufferObject(gbm_bo *bo)
+{
+    {
+        FrameBuffer *fb = static_cast<FrameBuffer *>(gbm_bo_get_user_data(bo));
+        if (fb)
+            return fb;
+    }
+
+    uint32_t width = gbm_bo_get_width(bo);
+    uint32_t height = gbm_bo_get_height(bo);
+    uint32_t handles[4] = { gbm_bo_get_handle(bo).u32 };
+    uint32_t strides[4] = { gbm_bo_get_stride(bo) };
+    uint32_t offsets[4] = { 0 };
+
+    // TODO: need to handle cases does not have modifiers
+    uint64_t modifiers[4] = { 0 };
+    for (int i = 0; i < ARRAY_LENGTH(modifiers) && handles[i]; i++)
+        modifiers[i] = gbm_bo_get_modifier(bo);
+
+    uint32_t pixelFormat = gbmFormatToDrmFormat(gbm_bo_get_format(bo));
+
+    QScopedPointer<FrameBuffer> fb(new FrameBuffer);
+    qCDebug(qLcStarfishDebug, "Adding FB, size %ux%u, DRM format 0x%x", width, height, pixelFormat);
+
+    int ret = drmModeAddFB2WithModifiers(device()->fd(), width, height, pixelFormat,
+                                         handles, strides, offsets, modifiers, &fb->fb, DRM_MODE_FB_MODIFIERS);
+
+    if (ret) {
+        qWarning("Failed to create KMS FB!");
+        return nullptr;
+    }
+
+    gbm_bo_set_user_data(bo, fb.data(), bufferDestroyedHandler);
+    return fb.take();
 }
 
 void EglFSStarfishScreen::setVisible(bool visible)
