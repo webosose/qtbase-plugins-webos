@@ -433,6 +433,7 @@ QVector<uint64_t> EglFSStarfishDevice::getGbmModifiersFromPlane(const QKmsOutput
     drmModePlaneResPtr planeResources = drmModeGetPlaneResources(m_dri_fd);
     if (!planeResources)
         return modifiers;
+
     const unsigned int countPlanes = planeResources->count_planes;
     qCDebug(qLcStarfishDebug, "Found %u planes", countPlanes);
 
@@ -456,6 +457,7 @@ QVector<uint64_t> EglFSStarfishDevice::getGbmModifiersFromPlane(const QKmsOutput
 
     if (!found) {
         qCDebug(qLcStarfishDebug, "No matching plane found having id %d", output.eglfs_plane->id);
+        drmModeFreePlaneResources(planeResources);
         return modifiers;
     }
 
@@ -493,6 +495,7 @@ QVector<uint64_t> EglFSStarfishDevice::getGbmModifiersFromPlane(const QKmsOutput
 
     drmModeFreePropertyBlob(blob);
     drmModeFreePlane(plane);
+    drmModeFreePlaneResources(planeResources);
 
     return modifiers;
 }
@@ -682,8 +685,6 @@ void EglFSStarfishDevice::createStarfishScreens()
     int current = -1;
     int best = -1;
 
-    int configurationRefresh = 0;
-
     auto userConfig = m_screenConfig->outputSettings();
     QVariantMap userConnectorConfig = userConfig.value(QString::fromUtf8(connectorName));
 
@@ -773,7 +774,6 @@ QPlatformScreen *EglFSStarfishDevice::createStarfishScreenForConnector(drmModeRe
 {
     Q_ASSERT(vinfo);
 
-    int configurationRefresh = 0;
     auto userConfig = m_screenConfig->outputSettings();
     QVariantMap userConnectorConfig = userConfig.value(connectorName);
 
@@ -909,6 +909,9 @@ QPlatformScreen *EglFSStarfishDevice::createStarfishScreenForConnector(drmModeRe
     if (output.eglfs_plane) {
         qCDebug(qLcStarfishDebug, "Chose plane %u for output %s (crtc id %u) (may not be applicable)",
                 output.eglfs_plane->id, connectorName.toUtf8().constData(), output.crtc_id);
+    } else {
+        qFatal("Fail to choose plane for output %s (crtc id %u)",
+               connectorName.toUtf8().constData(), output.crtc_id);
     }
 
     m_crtc_allocator |= bits_crtc;
@@ -1134,9 +1137,8 @@ void EglFSStarfishScreen::flip()
     ensureModeSet(fb->fb);
 
     QKmsOutput &op(output());
-    // TODO: UNUSED
-    const int fd = device()->fd();
-    m_flipPending = true;
+    if (!op.eglfs_plane)
+        qFatal("op.eglfs_plane should not be nullptr");
 
     if (device()->hasAtomicSupport()) {
 #if QT_CONFIG(drm_atomic)
@@ -1262,6 +1264,9 @@ void EglFSStarfishScreen::setVisible(bool visible)
             qWarning("setVisible: Fail to drmModeAtomicAlloc");
             return;
         }
+
+        if (!op.eglfs_plane)
+            qFatal("op.eglfs_plane should not be nullptr");
 
         drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->framebufferPropertyId, 0);
         drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->crtcPropertyId, 0);
