@@ -112,6 +112,15 @@ WebOSEglFSIntegration::WebOSEglFSIntegration()
 #endif
 }
 
+bool WebOSEglFSIntegration::hasCapability(Capability capability) const
+{
+    // Disabled Threading as it seems to cause problems -> TODO investigate
+    switch (capability) {
+        case ThreadedOpenGL: return false;
+        default: return QEglFSIntegration::hasCapability(capability);
+    }
+}
+
 #if QT_CONFIG(evdev)
 QString WebOSEglFSIntegration::initializeDevices(QStringList devices)
 {
