@@ -19,6 +19,7 @@
 #include <private/qwindow_p.h>
 
 #ifdef IM_ENABLE
+#include <snapshot-boot/snapshot-boot.h>
 #include "qstarfishinputmanager.h"
 #endif
 
@@ -75,5 +76,17 @@ void EglFSStarfishWindow::setGeometry(const QRect &r)
 void EglFSStarfishWindow::requestActivateWindow()
 {
     QEglFSKmsGbmWindow::requestActivateWindow();
+
+#ifdef IM_ENABLE
+    // If snapshot boot mode is "making", dma-buf memory for GBM buffer objects (allocated for DRM
+    // cursor framebuffers in the "making" phase) becomes volatile from next snapshot boot resume.
+    // The below call of startInputService in this case will be called later in onSnapshotBootDone
+    // of EglFSStarfishIntegration.
+    if (snapshot_boot_mode() == SNAPSHOT_MODE_MAKING)
+        return;
+
+    // Initialize libim for the top window to get focus and receive key events.
+    QStarfishInputManager::instance()->startInputService();
+#endif
 }
 

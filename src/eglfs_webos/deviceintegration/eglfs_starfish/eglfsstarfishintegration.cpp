@@ -314,8 +314,8 @@ void EglFSStarfishIntegration::onSnapshotBootDone()
     qInfo() << "EglFSStarfishIntegration::onSnapshotBootDone";
     // This can be moved later, when starfish input can be included in snapshot boot
 #ifdef IM_ENABLE
-    //This sequence makes sure that Top Window get focus
-    //so that it can receive key event.
+    // The first opportunity to call startInputService already occurred in requestActivateWindow
+    // of EglFSStarfishWindow, but was blocked because snapshot-boot mode was "making" then.
     QStarfishInputManager::instance()->startInputService();
 #endif
 }

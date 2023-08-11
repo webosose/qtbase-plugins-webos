@@ -54,6 +54,7 @@ inputmanager {
     DEFINES += IM_ENABLE \
                DEBUG_KEY_EVENT
     INCLUDEPATH  += $$WEBOS_STAGING_INCDIR/im
+    LIBS += -lsnapshot-boot
 
     !no_multi_input {
         # Multiple input support
