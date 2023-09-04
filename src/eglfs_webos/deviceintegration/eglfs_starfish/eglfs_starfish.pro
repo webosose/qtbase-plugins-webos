@@ -54,7 +54,6 @@ inputmanager {
     DEFINES += IM_ENABLE \
                DEBUG_KEY_EVENT
     INCLUDEPATH  += $$WEBOS_STAGING_INCDIR/im
-    LIBS += -lsnapshot-boot
 
     !no_multi_input {
         # Multiple input support
@@ -73,4 +72,16 @@ OTHER_FILES += $$PWD/eglfs_starfish.json
 
 emulator {
     DEFINES += EMULATOR
+}
+
+snapshot-boot {
+    SOURCES += $$PWD/qstarfishsnapshotoperator.cpp
+    HEADERS += $$PWD/qstarfishsnapshotoperator.h
+    LIBS += -ldile_boardinfo -lsnapshot-boot
+    DEFINES += SNAPSHOT_BOOT
+
+    resource.path = $$WEBOS_INSTALL_DATADIR/qt5-qpa-starfish
+    resource.files = resources
+
+    INSTALLS += resource
 }

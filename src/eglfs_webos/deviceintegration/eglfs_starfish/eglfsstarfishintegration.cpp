@@ -39,6 +39,10 @@
 #include <im/im_openapi_input_type.h>
 #endif
 
+#ifdef SNAPSHOT_BOOT
+#include "qstarfishsnapshotoperator.h"
+#endif
+
 #define ARRAY_LENGTH(a) (sizeof (a) / sizeof (a)[0])
 
 static QMutex s_frameBufferMutex;
@@ -54,11 +58,7 @@ enum OutputConfiguration {
     OutputConfigModeline
 };
 
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)) || (defined(HAS_PAGEFLIPPED))
 static void(*page_flip_notifier)(void* key, unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec) = nullptr;
-#else
-static void(*page_flip_notifier)(void* key) = nullptr;
-#endif
 
 static void setScreenVisibleDirectly(QScreen *screen, bool visible, QString reason)
 {
@@ -310,9 +310,17 @@ void EglFSStarfishIntegration::screenInit()
     }
 }
 
+void EglFSStarfishIntegration::presentBuffer(QPlatformSurface *surface)
+{
+    QElapsedTimer timer;
+    timer.start();
+    QEglFSKmsGbmIntegration::presentBuffer(surface);
+    qCDebug(qLcStarfishDebug) << "presentBuffer:" << timer.elapsed() << "ms" << this << surface;
+}
+
 void EglFSStarfishIntegration::onSnapshotBootDone()
 {
-    qInfo() << "EglFSStarfishIntegration::onSnapshotBootDone";
+    qCDebug(qLcStarfishDebug) << "EglFSStarfishIntegration::onSnapshotBootDone";
     // This can be moved later, when starfish input can be included in snapshot boot
 #ifdef IM_ENABLE
     // The first opportunity to call startInputService already occurred in requestActivateWindow
@@ -399,8 +407,11 @@ void *EglFSStarfishIntegration::nativeResourceForScreen(const QByteArray &resour
 
 // Use 'extern' instead of 'Q_DECL_IMPORT' here, because 'Q_DECL_IMPORT' has not external linkage in the Qt plugin.
 //extern bool starfish_im_cursor_cursorNeedUpdate;
+#endif
+
 void EglFSStarfishIntegration::waitForVSync(QPlatformSurface *surface) const
 {
+#ifdef CURSOR_OPENGL
     //starfish_im_cursor_cursorNeedUpdate = false;
     if (auto *window = static_cast<QPlatformWindow *>(surface)) {
         if (auto screen = window->screen()) {
@@ -409,10 +420,19 @@ void EglFSStarfishIntegration::waitForVSync(QPlatformSurface *surface) const
             }
         }
     }
+#endif
+    QElapsedTimer timer;
+    timer.start();
+
+    //system("echo \'[surface-manager] waiting pageFlipped(vsync)\' >> /dev/kmsg");
+    //system("echo \'[surface-manager] waiting pageFlipped(vsync)\' >> /dev/lg/logm0");
 
     QEglFSKmsIntegration::waitForVSync(surface);
+    qCDebug(qLcStarfishDebug) << "waitForVSync:" << timer.elapsed() << "ms" << this << surface;
+
+    //system("echo \'[surface-manager] eglSwapBuffers\' >> /dev/kmsg");
+    //system("echo \'[surface-manager] eglSwapBuffers\' >> /dev/lg/logm0");
 }
-#endif // CURSOR_OPENGL
 
 static inline uint32_t *
 formats_ptr(struct drm_format_modifier_blob *blob)
@@ -973,6 +993,16 @@ EglFSStarfishScreen::EglFSStarfishScreen(QEglFSKmsDevice *device, const QKmsOutp
     , m_dpr(-1.0)
     , m_modifiers(modifiers)
 {
+#ifdef SNAPSHOT_BOOT
+    m_snapshotOperator = new QStarfishSnapshotOperator(this);
+#endif
+}
+
+EglFSStarfishScreen::~EglFSStarfishScreen()
+{
+#ifdef SNAPSHOT_BOOT
+    delete m_snapshotOperator;
+#endif
 }
 
 static inline uint32_t drmFormatToGbmFormat(uint32_t drmFormat)
@@ -1134,20 +1164,19 @@ QRect EglFSStarfishScreen::applicationWindowGeometry() const
 
 void EglFSStarfishScreen::updateFlipStatus()
 {
-#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0)) && (!defined(HAS_PAGEFLIPPED))
-    if (page_flip_notifier)
-            (*page_flip_notifier)(this);
-#endif
     QEglFSKmsGbmScreen::updateFlipStatus();
 }
 
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)) || (defined(HAS_PAGEFLIPPED))
 void EglFSStarfishScreen::pageFlipped(unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec)
 {
+    qCDebug(qLcStarfishDebug) << "[flip] EglFSStarfishScreen::pageFlipped" << sequence << tv_sec << tv_usec;
+
+    system("echo \'[surface-manager] got pageFlipped(vsync)\' >> /dev/kmsg");
+    system("echo \'[surface-manager] got pageFlipped(vsync)\' >> /dev/lg/logm0");
+
     if (page_flip_notifier)
         (*page_flip_notifier)(this, sequence, tv_sec, tv_usec);
 }
-#endif
 
 void EglFSStarfishScreen::flip()
 {
@@ -1176,6 +1205,8 @@ void EglFSStarfishScreen::flip()
         qWarning("Could not lock GBM surface front buffer!");
         return;
     }
+    system("echo \'[surface-manager] flip: starting...\' >> /dev/kmsg");
+    system("echo \'[surface-manager] flip: starting...\' >> /dev/lg/logm0");
 
     FrameBuffer *fb = framebufferForBufferObject(m_gbm_bo_next);
     ensureModeSet(fb->fb);
@@ -1215,7 +1246,7 @@ void EglFSStarfishScreen::flip()
                 crtc_h = op.modes[op.mode].vdisplay;
             }
 
-            qCDebug(qLcStarfishDebug, "%s (plane %u): %ux%u -> %ux%u+%u+%u",
+            qCDebug(qLcStarfishDebug, "[flip] %s (plane %u): %ux%u -> %ux%u+%u+%u",
                     name().toUtf8().constData(), op.forced_plane_id,
                     w, h, crtc_w, crtc_h, crtc_x, crtc_y);
             if(op.eglfs_plane)
@@ -1239,6 +1270,9 @@ void EglFSStarfishScreen::flip()
 #if QT_CONFIG(drm_atomic)
     device()->threadLocalAtomicCommit(this);
 #endif
+    system("echo \'[surface-manager] flip: done(threadLocalAtomicCommit)\' >> /dev/kmsg");
+    system("echo \'[surface-manager] flip: done(threadLocalAtomicCommit)\' >> /dev/lg/logm0");
+    qCDebug(qLcStarfishDebug) << "[flip] EglFSStarfishScreen::flip threadLocalAtomicCommit done" << name();
 }
 
 QEglFSKmsGbmScreen::FrameBuffer *EglFSStarfishScreen::framebufferForBufferObject(gbm_bo *bo)
@@ -1456,4 +1490,40 @@ bool EglFSStarfishScreen::primary() const
 
     // assume first one is primary
     return screens.first()->handle() == this;
+}
+
+EglFSStarfishWindow *EglFSStarfishScreen::window()
+{
+    if (m_windows.length() < 1)
+        return nullptr;
+
+    return m_windows.first();
+}
+
+void EglFSStarfishScreen::snapshotReady()
+{
+#ifdef SNAPSHOT_BOOT
+    qInfo() << "EglFSStarfishScreen::snapshotReady" << this << "primary" << primary() << primarySurface();
+    if (primary() && m_snapshotOperator) {
+        setVisible(true);
+        m_snapshotOperator->execute();
+    }
+#endif
+}
+
+void EglFSStarfishScreen::snapshotDone()
+{
+#ifdef SNAPSHOT_BOOT
+    if (window())
+        window()->snapshotDone(primarySurface());
+#endif
+}
+
+bool EglFSStarfishScreen::hasSnapshotDone() const
+{
+#ifdef SNAPSHOT_BOOT
+    return m_snapshotOperator->isDone();
+#else
+    return true;
+#endif
 }

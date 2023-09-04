@@ -29,6 +29,7 @@
 
 class EglFSStarfishScreen;
 class EglFSStarfishWindow;
+class QStarfishSnapshotOperator;
 
 // TODO: remove dup by using WebOSKmsScreenConfig
 class EglFSStarfishScreenConfig : public QKmsScreenConfig
@@ -50,9 +51,8 @@ public:
     QKmsScreenConfig *createScreenConfig() override;
 
     void screenInit() override;
-#ifdef CURSOR_OPENGL
     void waitForVSync(QPlatformSurface *surface) const override;
-#endif
+    void presentBuffer(QPlatformSurface *surface) override;
 
     QFunctionPointer platformFunction(const QByteArray &function) const override;
     void *nativeResourceForIntegration(const QByteArray &name) override;
@@ -102,6 +102,7 @@ class EglFSStarfishScreen : public QEglFSKmsGbmScreen
 {
 public:
     EglFSStarfishScreen(QEglFSKmsDevice *device, const QKmsOutput &output, bool headless, QVector<uint64_t> modfiers);
+    ~EglFSStarfishScreen() override;
 
     gbm_surface *createSurface(EGLConfig eglConfig) override;
 
@@ -119,9 +120,7 @@ public:
     }
 #endif
 
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)) || (defined(HAS_PAGEFLIPPED))
     void pageFlipped(unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec) override;
-#endif
     FrameBuffer *framebufferForBufferObject(gbm_bo *bo);
 
     QRect rawGeometry() const override
@@ -143,6 +142,12 @@ public:
     int y() const { return m_position.y(); }
 
     bool primary() const;
+    EglFSStarfishWindow *window();
+
+    void snapshotReady();
+    void snapshotDone();
+
+    bool hasSnapshotDone() const;
 
 private:
     qreal m_dpr;
@@ -154,6 +159,9 @@ private:
     QVector<uint64_t> m_modifiers;
     QMap<QString,bool> m_visiblePolicies;
     QList<EglFSStarfishWindow*> m_windows;
+#ifdef SNAPSHOT_BOOT
+    QStarfishSnapshotOperator *m_snapshotOperator = nullptr;
+#endif
 };
 
 #endif // EGLFSSTARFISHINTEGRATION_H

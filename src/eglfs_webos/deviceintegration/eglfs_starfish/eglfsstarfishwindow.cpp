@@ -19,12 +19,17 @@
 #include <private/qwindow_p.h>
 
 #ifdef IM_ENABLE
-#include <snapshot-boot/snapshot-boot.h>
 #include "qstarfishinputmanager.h"
+#endif
+
+#ifdef SNAPSHOT_BOOT
+#include <snapshot-boot/snapshot-boot.h>
 #endif
 
 #include "eglfsstarfishwindow.h"
 #include "eglfsstarfishintegration.h"
+
+#include <QtGui/QGuiApplication>
 
 Q_DECLARE_LOGGING_CATEGORY(qLcStarfishDebug)
 
@@ -39,6 +44,13 @@ EglFSStarfishWindow::EglFSStarfishWindow(QWindow* window, const QEglFSKmsGbmInte
 EglFSStarfishWindow::~EglFSStarfishWindow()
 {
     m_screen->removePlatformWindow(this);
+}
+
+// Good timing to handle 'just after platform window created'
+void EglFSStarfishWindow::initialize()
+{
+    qInfo() << "[snapshotboot] EglFSStarfishWindow::initialize" << this->window() << this << "for screen" << screen();
+    snapshotReady();
 }
 
 void EglFSStarfishWindow::setVisible(bool visible)
@@ -73,20 +85,58 @@ void EglFSStarfishWindow::setGeometry(const QRect &r)
 #endif
 }
 
+// TODO: this function called twice for primary window. Couldn't find the reason.
 void EglFSStarfishWindow::requestActivateWindow()
 {
     QEglFSKmsGbmWindow::requestActivateWindow();
 
 #ifdef IM_ENABLE
+#ifdef SNAPSHOT_BOOT
     // If snapshot boot mode is "making", dma-buf memory for GBM buffer objects (allocated for DRM
     // cursor framebuffers in the "making" phase) becomes volatile from next snapshot boot resume.
     // The below call of startInputService in this case will be called later in onSnapshotBootDone
     // of EglFSStarfishIntegration.
     if (snapshot_boot_mode() == SNAPSHOT_MODE_MAKING)
         return;
+#endif
 
     // Initialize libim for the top window to get focus and receive key events.
     QStarfishInputManager::instance()->startInputService();
 #endif
 }
 
+void EglFSStarfishWindow::snapshotReady()
+{
+    EglFSStarfishScreen *screen = static_cast<EglFSStarfishScreen*>(this->screen());
+    if (screen && screen->primary()) {
+        qInfo() << "Disable EGLSufface to block rendering"  << m_surface << "->" << "0x0" << this;
+        m_surface = nullptr;
+        screen->snapshotReady();
+    }
+}
+
+void EglFSStarfishWindow::snapshotDone(EGLSurface surface)
+{
+    qInfo() << "Resume EGLSufface" << m_surface << "->" << surface;
+    m_surface = surface;
+
+#ifdef IM_ENABLE
+    qInfo() << "Start starfish input service after snaptshot resume";
+    QStarfishInputManager::instance()->startInputService();
+#endif
+}
+
+EGLSurface EglFSStarfishWindow::surface() const
+{
+#ifdef SNAPSHOT_BOOT
+    // Snapshot operator is installed only in primary platform screen
+    // Return EGL_NO_SURFACE until snapshot has done
+    QScreen *primaryScreen = QGuiApplication::primaryScreen();
+    if (primaryScreen && primaryScreen->handle()) {
+        EglFSStarfishScreen *screen = static_cast<EglFSStarfishScreen*>(primaryScreen->handle());
+        if (screen && !screen->hasSnapshotDone())
+            return EGL_NO_SURFACE;
+    }
+#endif
+    return m_surface;
+}

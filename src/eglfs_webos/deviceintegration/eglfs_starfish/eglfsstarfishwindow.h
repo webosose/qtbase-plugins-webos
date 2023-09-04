@@ -28,10 +28,15 @@ public:
     EglFSStarfishWindow(QWindow *, const QEglFSKmsGbmIntegration *);
     ~EglFSStarfishWindow() override;
 
+    void initialize() override;
     void setVisible(bool visible) override;
     void setGeometry(const QRect &rect) override;
     void requestActivateWindow() override;
 
+    EGLSurface surface() const override;
+
+    void snapshotReady();
+    void snapshotDone(EGLSurface);
 private:
     EglFSStarfishScreen *m_screen = nullptr;
 };
