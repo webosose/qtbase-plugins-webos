@@ -421,6 +421,11 @@ QVector<uint64_t> EglFSStarfishDevice::getGbmModifiersFromPlane(const QKmsOutput
     }
 
     drmModePropertyBlobRes *blob = planePropertyBlob(plane, QByteArrayLiteral("IN_FORMATS"));
+    if (!blob) {
+        drmModeFreePlane(plane);
+        return modifiers;
+    }
+
     struct drm_format_modifier_blob *fmt_mod_blob = static_cast<struct drm_format_modifier_blob *>(blob->data);
     uint32_t *blob_formats = formats_ptr(fmt_mod_blob);
     struct drm_format_modifier *blob_modifiers = modifiers_ptr(fmt_mod_blob);
@@ -440,10 +445,6 @@ QVector<uint64_t> EglFSStarfishDevice::getGbmModifiersFromPlane(const QKmsOutput
                 continue;
 
             modifiers.append(mod->modifier);
-            if (!mod) {
-                modifiers.clear();
-                break;
-            }
 
             qCDebug(qLcStarfishDebug, "Found modifier(0x%llx) for format(%c%c%c%c)\n",
                     mod->modifier,
@@ -644,27 +645,15 @@ void EglFSStarfishDevice::createStarfishScreens()
 
     int preferred = -1;
     int current = -1;
-    int configured = -1;
     int best = -1;
 
-    OutputConfiguration configuration;
-    QSize configurationSize;
     int configurationRefresh = 0;
-    drmModeModeInfo configurationModeline;
 
     auto userConfig = m_screenConfig->outputSettings();
     QVariantMap userConnectorConfig = userConfig.value(QString::fromUtf8(connectorName));
 
     for (int i = modes.size() - 1; i >= 0; i--) {
         const drmModeModeInfo &m = modes.at(i);
-
-        if (configuration == OutputConfigMode
-                && m.hdisplay == configurationSize.width()
-                && m.vdisplay == configurationSize.height()
-                && (!configurationRefresh || m.vrefresh == uint32_t(configurationRefresh)))
-        {
-            configured = i;
-        }
 
         if (!memcmp(&crtc_mode, &m, sizeof m))
             current = i;
@@ -675,24 +664,14 @@ void EglFSStarfishDevice::createStarfishScreens()
         best = i;
     }
 
-    if (configuration == OutputConfigModeline) {
-        modes << configurationModeline;
-        configured = modes.size() - 1;
-    }
-
     if (current < 0 && crtc_mode.clock != 0) {
         modes << crtc_mode;
         current = modes.size() - 1;
     }
 
-    if (configuration == OutputConfigCurrent)
-        configured = current;
-
     int selected_mode = -1;
 
-    if (configured >= 0)
-        selected_mode = configured;
-    else if (preferred >= 0)
+    if (preferred >= 0)
         selected_mode = preferred;
     else if (current >= 0)
         selected_mode = current;
@@ -759,11 +738,7 @@ QPlatformScreen *EglFSStarfishDevice::createStarfishScreenForConnector(drmModeRe
 {
     Q_ASSERT(vinfo);
 
-    OutputConfiguration configuration;
-    QSize configurationSize;
     int configurationRefresh = 0;
-    drmModeModeInfo configurationModeline;
-
     auto userConfig = m_screenConfig->outputSettings();
     QVariantMap userConnectorConfig = userConfig.value(connectorName);
 
@@ -1104,17 +1079,19 @@ void EglFSStarfishScreen::flip()
             qCDebug(qLcStarfishDebug, "%s (plane %u): %ux%u -> %ux%u+%u+%u",
                     name().toUtf8().constData(), op.forced_plane_id,
                     w, h, crtc_w, crtc_h, crtc_x, crtc_y);
-
-            drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->framebufferPropertyId, fb->fb);
-            drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->crtcPropertyId, op.crtc_id);
-            drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->srcwidthPropertyId, w << 16);
-            drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->srcXPropertyId, 0);
-            drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->srcYPropertyId, 0);
-            drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->srcheightPropertyId, h << 16);
-            drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->crtcXPropertyId, crtc_x);
-            drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->crtcYPropertyId, crtc_y);
-            drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->crtcwidthPropertyId, crtc_w);
-            drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->crtcheightPropertyId, crtc_h);
+            if(op.eglfs_plane)
+            {
+                drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->framebufferPropertyId, fb->fb);
+                drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->crtcPropertyId, op.crtc_id);
+                drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->srcwidthPropertyId, w << 16);
+                drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->srcXPropertyId, 0);
+                drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->srcYPropertyId, 0);
+                drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->srcheightPropertyId, h << 16);
+                drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->crtcXPropertyId, crtc_x);
+                drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->crtcYPropertyId, crtc_y);
+                drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->crtcwidthPropertyId, crtc_w);
+                drmModeAtomicAddProperty(request, op.eglfs_plane->id, op.eglfs_plane->crtcheightPropertyId, crtc_h);
+            }
         }
 #endif // QT_CONFIG(drm_atomic)
     } else {
