@@ -127,15 +127,15 @@ public:
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     void pageFlipped(unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec) override;
 #endif
-#ifdef PLANE_COMPOSITION
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    uint32_t gbmFlags() override;
-#endif
-
 #ifdef IM_ENABLE
     QPlatformCursor *cursor() const override {
         return m_cursor.get();
     }
+#endif
+
+#ifdef PLANE_COMPOSITION
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    uint32_t gbmFlags() override;
 #endif
 
     void setOverlayBufferObject(void *bo, QRectF rect, uint32_t zpos);
