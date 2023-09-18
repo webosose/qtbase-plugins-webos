@@ -17,12 +17,15 @@
 #ifndef EGLFSSTARFISHINTEGRATION_H
 #define EGLFSSTARFISHINTEGRATION_H
 
-#include <QMap>
+
 #include <QJsonObject>
-#include <private/qeglfskmsgbmintegration_p.h>
-#include <private/qeglfskmsgbmdevice_p.h>
-#include <private/qeglfskmsgbmscreen_p.h>
+#include <QMap>
+#include <QtEglSupport/private/qeglplatformcontext_p.h>
+#include <private/qeglfscontext_p.h>
 #include <private/qeglfskmsdevice_p.h>
+#include <private/qeglfskmsgbmdevice_p.h>
+#include <private/qeglfskmsgbmintegration_p.h>
+#include <private/qeglfskmsgbmscreen_p.h>
 #include <qpa/qplatformscreen_p.h>
 
 #include <StarfishServiceIntegration/qstarfishpowerdbridge.h>
@@ -44,6 +47,21 @@ private:
     QVariantMap m_connector;
 };
 
+class EglFSStarfishContext: public QEglFSContext
+{
+public:
+    EglFSStarfishContext(const QSurfaceFormat &format, QPlatformOpenGLContext *share, EGLDisplay display,
+                         EGLConfig *config, const QVariant &nativeHandle);
+
+#ifdef PARTIAL_UPDATE
+#ifdef MINIMAL_UPDATE
+    void updateDamageRegion(QPlatformSurface *surface, QList<QRectF> damageRects) override;
+#else
+    void updateDamageRegion(QPlatformSurface *surface, QRectF damageRects) override;
+#endif
+#endif
+};
+
 class EglFSStarfishIntegration : public QEglFSKmsGbmIntegration
 {
 public:
@@ -59,6 +77,8 @@ public:
     void *nativeResourceForScreen(const QByteArray &resource, QScreen *screen) override;
 
     QEglFSWindow *createWindow(QWindow *window) const override;
+    QEglFSContext *createEGLContext(QSurfaceFormat format, QPlatformOpenGLContext* share, EGLDisplay dpy, EGLConfig *config, QVariant nativeHandle) override;
+
     QKmsDevice *createDevice() override;
 
     void updateScreenVisibleDirectly(EglFSStarfishScreen *screen, bool visible, const QString& policy);

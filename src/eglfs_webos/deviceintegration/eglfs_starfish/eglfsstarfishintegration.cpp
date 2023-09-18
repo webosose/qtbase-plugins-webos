@@ -370,6 +370,11 @@ QEglFSWindow *EglFSStarfishIntegration::createWindow(QWindow *window) const
     return new EglFSStarfishWindow(window, this);
 }
 
+QEglFSContext *EglFSStarfishIntegration::createEGLContext(QSurfaceFormat format, QPlatformOpenGLContext* share, EGLDisplay dpy, EGLConfig *config, QVariant nativeHandle)
+{
+    return new EglFSStarfishContext(format, share, dpy, config, nativeHandle);
+}
+
 QKmsDevice *EglFSStarfishIntegration::createDevice()
 {
     QString path = screenConfig()->devicePath();
@@ -1527,3 +1532,93 @@ bool EglFSStarfishScreen::hasSnapshotDone() const
     return true;
 #endif
 }
+
+EglFSStarfishContext::EglFSStarfishContext(const QSurfaceFormat &format, QPlatformOpenGLContext *share, EGLDisplay display,
+                                           EGLConfig *config, const QVariant &nativeHandle)
+    : QEglFSContext(format, share, display, config, nativeHandle)
+{
+    qCDebug(qLcStarfishDebug) << "EglFSStarfishContext" << format << share;
+}
+
+#ifdef PARTIAL_UPDATE
+
+#define NUM_OF_BUFFER 2
+
+#ifdef MINIMAL_UPDATE
+void EglFSStarfishContext::updateDamageRegion(QPlatformSurface *surface, QList<QRectF> damageRects)
+{
+    if (damageRects.size() == 0)
+        return;
+#else
+void EglFSStarfishContext::updateDamageRegion(QPlatformSurface *surface, QRectF damageRects)
+{
+    if (damageRects.isNull())
+        return;
+#endif
+    EGLSurface eglSurface = eglSurfaceForPlatformSurface(surface);
+    EGLBoolean ret;
+
+    if (eglSurface == EGL_NO_SURFACE) {
+        m_forceFullUpdateCount = NUM_OF_BUFFER;
+    } else {
+        ret = eglQuerySurface(m_eglDisplay, eglSurface, EGL_BUFFER_AGE_KHR, &m_bufferAge);
+        if (ret == EGL_FALSE)
+            qWarning() << "buffer age query failed";
+
+        // to save the current damage region into buffer,
+        // check the buffer age after calculating damage region
+        if (m_bufferAge <= 0) {
+            qWarning() << "buffer age is less than 0; reset to 0";
+            m_bufferAge = 0;
+        }
+    }
+
+    EGLint *rects;
+    EGLint n_rects = 0;
+#ifdef MINIMAL_UPDATE
+    m_totalDamageRects += damageRects;
+    m_totalDamageRects += m_prevDamageRects;
+
+    m_prevDamageRects.swap(damageRects);
+
+    if ((m_bufferAge == 0 || m_bufferAge > 2) || m_forceFullUpdateCount > 0)
+        return;
+
+    rects = new EGLint[m_totalDamageRects.size()*4]; // 4 is for x, y, width, and height
+    n_rects = m_totalDamageRects.size();
+
+    for (int i = 0; i < n_rects; i++) {
+        rects[(4*i)+0] = m_totalDamageRects.value(i).toAlignedRect().x();
+        rects[(4*i)+1] = m_totalDamageRects.value(i).toAlignedRect().y();
+        rects[(4*i)+2] = m_totalDamageRects.value(i).toAlignedRect().width();
+        rects[(4*i)+3] = m_totalDamageRects.value(i).toAlignedRect().height();
+    }
+#else
+    m_totalDamageRects = m_totalDamageRects.united(damageRects);
+    m_totalDamageRects = m_totalDamageRects.united(m_prevDamageRects);
+
+    m_prevDamageRects = damageRects;
+
+    if ((m_bufferAge == 0 || m_bufferAge > 2) || m_forceFullUpdateCount > 0)
+        return;
+
+    rects = new EGLint[4]; // 4 is for x, y, width, and height
+    n_rects = 1;
+
+    rects[0] = m_totalDamageRects.toAlignedRect().x();
+    rects[1] = m_totalDamageRects.toAlignedRect().y();
+    rects[2] = m_totalDamageRects.toAlignedRect().width();
+    rects[3] = m_totalDamageRects.toAlignedRect().height();
+#endif
+
+    if (setDamageRegion) {
+        qCDebug(qLcStarfishDebug) << "Current damaged area: " << damageRects << ", Total damaged area:" << m_totalDamageRects;
+        ret = setDamageRegion(m_eglDisplay, eglSurface, rects, n_rects);
+    }
+
+    if (ret == EGL_FALSE)
+        qWarning() << "Failed in eglSetDamageRegion.";
+
+    delete [] rects;
+}
+#endif
