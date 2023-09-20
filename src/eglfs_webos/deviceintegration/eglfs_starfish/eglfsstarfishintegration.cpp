@@ -1171,8 +1171,8 @@ void EglFSStarfishScreen::pageFlipped(unsigned int sequence, unsigned int tv_sec
 {
     qCDebug(qLcStarfishDebug) << "[flip] EglFSStarfishScreen::pageFlipped" << sequence << tv_sec << tv_usec;
 
-    system("echo \'[surface-manager] got pageFlipped(vsync)\' >> /dev/kmsg");
-    system("echo \'[surface-manager] got pageFlipped(vsync)\' >> /dev/lg/logm0");
+    // system("echo \'[surface-manager] got pageFlipped(vsync)\' >> /dev/kmsg");
+    // system("echo \'[surface-manager] got pageFlipped(vsync)\' >> /dev/lg/logm0");
 
     if (page_flip_notifier)
         (*page_flip_notifier)(this, sequence, tv_sec, tv_usec);
@@ -1205,8 +1205,8 @@ void EglFSStarfishScreen::flip()
         qWarning("Could not lock GBM surface front buffer!");
         return;
     }
-    system("echo \'[surface-manager] flip: starting...\' >> /dev/kmsg");
-    system("echo \'[surface-manager] flip: starting...\' >> /dev/lg/logm0");
+    // system("echo \'[surface-manager] flip: starting...\' >> /dev/kmsg");
+    // system("echo \'[surface-manager] flip: starting...\' >> /dev/lg/logm0");
 
     FrameBuffer *fb = framebufferForBufferObject(m_gbm_bo_next);
     ensureModeSet(fb->fb);
@@ -1270,8 +1270,8 @@ void EglFSStarfishScreen::flip()
 #if QT_CONFIG(drm_atomic)
     device()->threadLocalAtomicCommit(this);
 #endif
-    system("echo \'[surface-manager] flip: done(threadLocalAtomicCommit)\' >> /dev/kmsg");
-    system("echo \'[surface-manager] flip: done(threadLocalAtomicCommit)\' >> /dev/lg/logm0");
+    // system("echo \'[surface-manager] flip: done(threadLocalAtomicCommit)\' >> /dev/kmsg");
+    // system("echo \'[surface-manager] flip: done(threadLocalAtomicCommit)\' >> /dev/lg/logm0");
     qCDebug(qLcStarfishDebug) << "[flip] EglFSStarfishScreen::flip threadLocalAtomicCommit done" << name();
 }
 
