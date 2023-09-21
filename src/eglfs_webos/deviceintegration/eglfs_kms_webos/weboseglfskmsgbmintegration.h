@@ -45,6 +45,9 @@ public:
 
     QFunctionPointer platformFunction(const QByteArray &function) const override;
     void *nativeResourceForIntegration(const QByteArray &name) override;
+#ifdef IM_ENABLE
+    void *nativeResourceForScreen(const QByteArray &resource, QScreen *screen) override;
+#endif
 
     QEglFSWindow *createWindow(QWindow *window) const override;
     QKmsDevice *createDevice() override;

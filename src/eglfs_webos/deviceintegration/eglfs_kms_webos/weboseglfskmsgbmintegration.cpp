@@ -34,6 +34,7 @@
 
 #ifdef IM_ENABLE
 #include "qstarfishimcursor.h"
+#include "qstarfishinputmanager.h"
 #endif
 
 static QMutex s_frameBufferMutex;
@@ -137,6 +138,19 @@ void *WebOSEglFSKmsGbmIntegration::nativeResourceForIntegration(const QByteArray
 
     return QEglFSKmsIntegration::nativeResourceForIntegration(name);
 }
+
+#ifdef IM_ENABLE
+void *WebOSEglFSKmsGbmIntegration::nativeResourceForScreen(const QByteArray &resource, QScreen *screen)
+{
+    QByteArray lowerCaseResource = resource.toLower();
+
+    void *input_interface = QStarfishInputManager::instance()->nativeResourceForScreen(lowerCaseResource, screen);
+    if (input_interface)
+        return input_interface;
+
+    return QEglFSKmsIntegration::nativeResourceForScreen(resource, screen);
+}
+#endif
 
 QEglFSWindow *WebOSEglFSKmsGbmIntegration::createWindow(QWindow *window) const
 {
