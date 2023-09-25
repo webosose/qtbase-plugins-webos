@@ -31,7 +31,8 @@ EglFSStarfishWindow::EglFSStarfishWindow(QWindow* window, const QEglFSKmsGbmInte
     : QEglFSKmsGbmWindow(window, integration)
 {
     m_screen = static_cast<EglFSStarfishScreen*>(screen());
-    m_screen->appendPlatformWindow(this);
+    if (m_screen)
+        m_screen->appendPlatformWindow(this);
 }
 
 EglFSStarfishWindow::~EglFSStarfishWindow()

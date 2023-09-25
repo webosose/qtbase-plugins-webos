@@ -82,7 +82,7 @@ public:
                                                       drmModeConnectorPtr connector,
                                                       ScreenInfo *vinfo,
                                                       const QString& connectorName,
-                                                      int crtc,
+                                                      size_t crtc,
                                                       int selected_mode,
                                                       QList<drmModeModeInfo> modes);
 

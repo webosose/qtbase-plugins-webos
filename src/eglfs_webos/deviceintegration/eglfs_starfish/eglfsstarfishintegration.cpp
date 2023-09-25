@@ -160,17 +160,14 @@ static bool parseModeline(const QByteArray &text, drmModeModeInfoPtr mode)
     mode->vrefresh = 0;
     mode->flags = 0;
 
-    if (sscanf(text.constData(), "%f %hd %hd %hd %hd %hd %hd %hd %hd %15s %15s",
-               &fclock,
-               &mode->hdisplay,
-               &mode->hsync_start,
-               &mode->hsync_end,
-               &mode->htotal,
-               &mode->vdisplay,
-               &mode->vsync_start,
-               &mode->vsync_end,
-               &mode->vtotal, hsync, vsync) != 11)
+    QTextStream stream(text, QIODevice::ReadOnly);
+    stream >> fclock >> mode->hdisplay >> mode->hsync_start >> mode->hsync_end
+           >> mode->htotal >> mode->vdisplay >> mode->vsync_start >> mode->vsync_end
+           >> mode->vtotal >> hsync >> vsync;
+    if (stream.status() != QTextStream::Ok) {
+        qWarning() << "Failed to parse the modeline";
         return false;
+    }
 
     mode->clock = fclock * 1000;
 
@@ -393,17 +390,16 @@ QVector<uint64_t> EglFSStarfishDevice::getGbmModifiersFromPlane(const QKmsOutput
     drmModePlaneResPtr planeResources = drmModeGetPlaneResources(m_dri_fd);
     if (!planeResources)
         return modifiers;
-
-    const int countPlanes = planeResources->count_planes;
-    qCDebug(qLcStarfishDebug, "Found %d planes", countPlanes);
+    const unsigned int countPlanes = planeResources->count_planes;
+    qCDebug(qLcStarfishDebug, "Found %u planes", countPlanes);
 
     drmModePlanePtr plane = nullptr;
     bool found = false;
 
-    for (int planeIdx = 0; planeIdx < countPlanes; ++planeIdx) {
+    for (unsigned int planeIdx = 0; planeIdx < countPlanes; ++planeIdx) {
         plane = drmModeGetPlane(m_dri_fd, planeResources->planes[planeIdx]);
         if (!plane) {
-            qCDebug(qLcStarfishDebug, "Failed to query plane %d, ignoring", planeIdx);
+            qCDebug(qLcStarfishDebug, "Failed to query plane %u, ignoring", planeIdx);
             continue;
         }
         if (plane->plane_id != output.eglfs_plane->id) {
@@ -441,7 +437,7 @@ QVector<uint64_t> EglFSStarfishDevice::getGbmModifiersFromPlane(const QKmsOutput
 
             if ((i < mod->offset) || (i > mod->offset + 63))
                 continue;
-            if (!(mod->formats & (1 << (i - mod->offset))))
+            if (!(mod->formats & (1UL << (i - mod->offset))))
                 continue;
 
             modifiers.append(mod->modifier);
@@ -485,7 +481,7 @@ void *EglFSStarfishIntegration::nativeResourceForScreen(const QByteArray &resour
 static bool parseGeometryString(const QString& string, QRect &geometry, int &rotation, double &ratio)
 {
     // Syntax: WIDTH[x]HEIGHT[+/-]X[+/-]Y[r]ROTATION[s]RATIO
-    QRegularExpression re("([0-9]+)x([0-9]+)([\+\-][0-9]+)([\+\-][0-9]+)r([0-9]+)s([0-9]+\.?[0-9]*)");
+    QRegularExpression re("([0-9]+)x([0-9]+)([+-][0-9]+)([+-][0-9]+)r([0-9]+)s([0-9]+.?[0-9]*)");
     QRegularExpressionMatch match = re.match(string);
 
     if (match.hasMatch()) {
@@ -547,8 +543,15 @@ drmModePropertyBlobPtr EglFSStarfishDevice::planePropertyBlob(drmModePlanePtr pl
         prop = drmModeGetProperty(m_dri_fd, objProps->props[i]);
         if (!prop)
             continue;
-        if ((prop->flags & DRM_MODE_PROP_BLOB) && (strcmp(prop->name, name.constData()) == 0))
-            blob = drmModeGetPropertyBlob(m_dri_fd, objProps->prop_values[i]);
+        if ((prop->flags & DRM_MODE_PROP_BLOB) && (strcmp(prop->name, name.constData()) == 0)) {
+            uint64_t prop_values = objProps->prop_values[i];
+            uint32_t u_prop_values;
+            if (prop_values > UINT_MAX)
+                continue;
+
+            u_prop_values = (uint32_t) prop_values;
+            blob = drmModeGetPropertyBlob(m_dri_fd, u_prop_values);
+        }
         drmModeFreeProperty(prop);
     }
 
@@ -608,12 +611,12 @@ void EglFSStarfishDevice::createStarfishScreens()
     // ]
     const QByteArray connectorName = nameForConnector(connector);
 
-    const int crtc = crtcForConnector(resources, connector);
-    if (crtc < 0) {
+    const int crtcIdx = crtcForConnector(resources, connector);
+    if (crtcIdx < 0) {
         qWarning() << "No usable crtc/encoder pair for connector" << connectorName;
         return;
     }
-
+    const uint32_t crtc = (unsigned int) crtcIdx;
     const uint32_t crtc_id = resources->crtcs[crtc];
 
     // Get the current mode on the current crtc
@@ -684,7 +687,7 @@ void EglFSStarfishDevice::createStarfishScreens()
     } else {
         int width = modes[selected_mode].hdisplay;
         int height = modes[selected_mode].vdisplay;
-        int refresh = modes[selected_mode].vrefresh;
+        uint32_t refresh = modes[selected_mode].vrefresh;
         qCDebug(qLcStarfishDebug) << "Selected mode" << selected_mode << ":" << width << "x" << height
                                   << '@' << refresh << "hz for output" << connectorName;
     }
@@ -732,7 +735,7 @@ QPlatformScreen *EglFSStarfishDevice::createStarfishScreenForConnector(drmModeRe
                                                                        drmModeConnectorPtr connector,
                                                                        ScreenInfo *vinfo,
                                                                        const QString& connectorName,
-                                                                       int crtc,
+                                                                       size_t crtc,
                                                                        int selected_mode,
                                                                        QList<drmModeModeInfo> modes)
 {
@@ -761,6 +764,8 @@ QPlatformScreen *EglFSStarfishDevice::createStarfishScreenForConnector(drmModeRe
                          << "for output" << connectorName;
 #endif
 
+    if (crtc > UINT_MAX)
+        return nullptr;
     const uint32_t crtc_id = resources->crtcs[crtc];
     // TODO: implement cloneSource if necessary
     QString cloneSource;
@@ -816,8 +821,16 @@ QPlatformScreen *EglFSStarfishDevice::createStarfishScreenForConnector(drmModeRe
     QString planeListStr;
     QKmsPlane::Type planeType = vinfo->isPrimary ? QKmsPlane::PrimaryPlane : QKmsPlane::OverlayPlane;
 
+    if (output.crtc_index > 31) {
+        qWarning("left shifting by more than 31 bits has undefined behavior");
+        return nullptr;
+    }
+    uint32_t bits_crtc = 1U << output.crtc_index;
+
     for (QKmsPlane &plane : m_planes) {
-        if (plane.possibleCrtcs & (1 << output.crtc_index)) {
+        int int_possibleCrtcs = plane.possibleCrtcs;
+        uint32_t uint_possibleCrtcs = int_possibleCrtcs < 0 ? 0 : (uint32_t) int_possibleCrtcs;
+        if (uint_possibleCrtcs & bits_crtc) {
             output.available_planes.append(plane);
             planeListStr.append(QString::number(plane.id));
             planeListStr.append(u' ');
@@ -839,7 +852,7 @@ QPlatformScreen *EglFSStarfishDevice::createStarfishScreenForConnector(drmModeRe
                 output.eglfs_plane->id, connectorName.toUtf8().constData(), output.crtc_id);
     }
 
-    m_crtc_allocator |= (1 << output.crtc_index);
+    m_crtc_allocator |= bits_crtc;
 
     vinfo->output = output;
 
@@ -880,6 +893,14 @@ gbm_surface *EglFSStarfishScreen::createSurface(EGLConfig eglConfig)
         // If there was no format override given in the config file,
         // query the native (here, gbm) format from the EGL config.
         const bool queryFromEgl = !m_output.drm_format_requested_by_user;
+
+        int int_rawGeometryWidth = rawGeometry().width();
+        int int_rawGeometryHeight = rawGeometry().height();
+        int int_modifiersSize = m_modifiers.size();
+        uint32_t uint_rawGeometryWidth = int_rawGeometryWidth < 0 ? 0 : (uint32_t) int_rawGeometryWidth;
+        uint32_t uint_rawGeometryHeight = int_rawGeometryHeight < 0 ? 0 : (uint32_t) int_rawGeometryHeight;
+        uint32_t uint_modifiersSize = int_modifiersSize < 0 ? 0 : (uint32_t) int_modifiersSize;
+
         if (queryFromEgl) {
             EGLint native_format = -1;
             EGLBoolean success = eglGetConfigAttrib(display(), eglConfig, EGL_NATIVE_VISUAL_ID, &native_format);
@@ -887,21 +908,22 @@ gbm_surface *EglFSStarfishScreen::createSurface(EGLConfig eglConfig)
                                       << "from eglGetConfigAttrib() with return code" << bool(success);
 
             if (success) {
+                uint32_t uint_nativeFormat = native_format < 0 ? 0 : (uint32_t) native_format;
                 if (m_modifiers.size()) {
                     m_gbm_surface = gbm_surface_create_with_modifiers(gbmDevice,
-                                                                      rawGeometry().width(),
-                                                                      rawGeometry().height(),
-                                                                      native_format,
-                                                                      m_modifiers.data(), m_modifiers.size());
+                                                                      uint_rawGeometryWidth,
+                                                                      uint_rawGeometryHeight,
+                                                                      uint_nativeFormat,
+                                                                      m_modifiers.data(), uint_modifiersSize);
                 } else {
                     m_gbm_surface = gbm_surface_create(gbmDevice,
-                                                       rawGeometry().width(),
-                                                       rawGeometry().height(),
-                                                       native_format,
+                                                       uint_rawGeometryWidth,
+                                                       uint_rawGeometryHeight,
+                                                       uint_nativeFormat,
                                                        GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
                 }
                 if (m_gbm_surface)
-                    m_output.drm_format = gbmFormatToDrmFormat(native_format);
+                    m_output.drm_format = gbmFormatToDrmFormat(uint_nativeFormat);
             }
         }
 
@@ -912,16 +934,17 @@ gbm_surface *EglFSStarfishScreen::createSurface(EGLConfig eglConfig)
             uint32_t gbmFormat = drmFormatToGbmFormat(m_output.drm_format);
             if (queryFromEgl)
                 qCDebug(qLcStarfishDebug, "Could not create surface with EGL_NATIVE_VISUAL_ID, falling back to format %x", gbmFormat);
+
             if (m_modifiers.size()) {
                 m_gbm_surface = gbm_surface_create_with_modifiers(gbmDevice,
-                                                                  rawGeometry().width(),
-                                                                  rawGeometry().height(),
+                                                                  uint_rawGeometryWidth,
+                                                                  uint_rawGeometryHeight,
                                                                   gbmFormat,
-                                                                  m_modifiers.data(), m_modifiers.size());
+                                                                  m_modifiers.data(), uint_modifiersSize);
             } else {
                 m_gbm_surface = gbm_surface_create(gbmDevice,
-                                                   rawGeometry().width(),
-                                                   rawGeometry().height(),
+                                                   uint_rawGeometryWidth,
+                                                   uint_rawGeometryHeight,
                                                    gbmFormat,
                                                    GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
             }
@@ -1058,14 +1081,23 @@ void EglFSStarfishScreen::flip()
 #if QT_CONFIG(drm_atomic)
         drmModeAtomicReq *request = device()->threadLocalAtomicRequest();
         if (request) {
-            const uint32_t crtc_x = geometry().x();
-            const uint32_t crtc_y = geometry().y();
+            int int_geometryX = geometry().x();
+            int int_geometryY = geometry().y();
+            int int_geometryWidth = geometry().width();
+            int int_geometryHeight = geometry().height();
+            uint32_t uint_geometryX = int_geometryX < 0 ? 0 : (uint32_t) int_geometryX;
+            uint32_t uint_geometryY = int_geometryY < 0 ? 0 : (uint32_t) int_geometryY;
+            uint32_t uint_geometryWidth = int_geometryWidth < 0 ? 0 : (uint32_t) int_geometryWidth;
+            uint32_t uint_geometryHeight = int_geometryHeight < 0 ? 0 : (uint32_t) int_geometryHeight;
 
-            const uint32_t w = geometry().width();
-            const uint32_t h = geometry().height();
+            const uint32_t crtc_x = uint_geometryX;
+            const uint32_t crtc_y = uint_geometryY;
 
-            uint32_t crtc_w = geometry().width();
-            uint32_t crtc_h = geometry().height();
+            const uint32_t w = uint_geometryWidth;
+            const uint32_t h = uint_geometryHeight;
+
+            uint32_t crtc_w = uint_geometryWidth;
+            uint32_t crtc_h = uint_geometryHeight;
 
             bool isPrimaryPlane = op.eglfs_plane && op.eglfs_plane->type == QKmsPlane::PrimaryPlane;
 
@@ -1187,7 +1219,13 @@ void EglFSStarfishIntegration::updateScreenVisibleDirectly(EglFSStarfishScreen *
     // check exception cases
     int application_visible_count = 0;
     foreach (EglFSStarfishScreen *s, m_screens) {
-        if (s->visibleByPolicy("application")) application_visible_count++;
+        if (s->visibleByPolicy("application")) {
+            if (application_visible_count == INT_MAX) {
+                qWarning() << "Cannot increase application_visible_count greater than " << INT_MAX;
+                continue;
+            }
+            application_visible_count++;
+        }
     }
     // case1: ensure exclusive policy if something goes wrong
     if (application_visible_count > 1) {
