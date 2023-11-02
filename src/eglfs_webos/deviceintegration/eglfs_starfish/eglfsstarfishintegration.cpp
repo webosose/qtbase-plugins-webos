@@ -20,6 +20,7 @@
 #include <QScreen>
 #include <QWindow>
 #include <QtCore/QLoggingCategory>
+#include <QtCore/QScopeGuard>
 #include <QRegularExpression>
 
 #include <QtDeviceDiscoverySupport/private/qdevicediscovery_p.h>
@@ -1213,7 +1214,17 @@ void EglFSStarfishScreen::flip()
     // system("echo \'[surface-manager] flip: starting...\' >> /dev/kmsg");
     // system("echo \'[surface-manager] flip: starting...\' >> /dev/lg/logm0");
 
+    auto gbmRelease = qScopeGuard([this]{
+        m_flipPending = false;
+        gbm_surface_release_buffer(m_gbm_surface, m_gbm_bo_next);
+        m_gbm_bo_next = nullptr;
+    });
+
     FrameBuffer *fb = framebufferForBufferObject(m_gbm_bo_next);
+    if (!fb) {
+        qWarning("FrameBuffer not available. Cannot flip");
+        return;
+    }
     ensureModeSet(fb->fb);
 
     QKmsOutput &op(output());
@@ -1273,11 +1284,14 @@ void EglFSStarfishScreen::flip()
         qFatal("DRM atomic support is mandatory. Set QT_QPA_EGLFS_KMS_ATOMIC=1");
     }
 #if QT_CONFIG(drm_atomic)
-    device()->threadLocalAtomicCommit(this);
+    if (!device()->threadLocalAtomicCommit(this))
+        return;
 #endif
     // system("echo \'[surface-manager] flip: done(threadLocalAtomicCommit)\' >> /dev/kmsg");
     // system("echo \'[surface-manager] flip: done(threadLocalAtomicCommit)\' >> /dev/lg/logm0");
     qCDebug(qLcStarfishDebug) << "[flip] EglFSStarfishScreen::flip threadLocalAtomicCommit done" << name();
+
+    gbmRelease.dismiss();
 }
 
 QEglFSKmsGbmScreen::FrameBuffer *EglFSStarfishScreen::framebufferForBufferObject(gbm_bo *bo)
