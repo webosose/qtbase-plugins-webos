@@ -1023,6 +1023,13 @@ static inline uint32_t gbmFormatToDrmFormat(uint32_t gbmFormat)
     return gbmFormat;
 }
 
+static inline gbm_surface *createGbmSurface(struct gbm_device *device, const QRect &geometry, EGLint format, const QVector<uint64_t> &modifiers)
+{
+    return modifiers.size()
+           ? gbm_surface_create_with_modifiers(device, geometry.width(), geometry.height(), format, modifiers.data(), modifiers.size())
+           : gbm_surface_create(device, geometry.width(), geometry.height(), format, GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
+}
+
 gbm_surface *EglFSStarfishScreen::createSurface(EGLConfig eglConfig)
 {
     qInfo() << "#### EglFSStarfishScreen::createSurface";
@@ -1031,65 +1038,42 @@ gbm_surface *EglFSStarfishScreen::createSurface(EGLConfig eglConfig)
         qInfo() << "Creating gbm_surface for screen" << name()
               << "with modifiers" << m_modifiers;
 
+        EGLint native_format = -1;
+        EGLBoolean success = eglGetConfigAttrib(display(), eglConfig, EGL_NATIVE_VISUAL_ID, &native_format);
+        qCDebug(qLcStarfishDebug) << "Got native format" << hex << native_format << dec
+                                  << "from eglGetConfigAttrib() with return code" << bool(success);
+
         const auto gbmDevice = static_cast<QEglFSKmsGbmDevice *>(device())->gbmDevice();
         // If there was no format override given in the config file,
         // query the native (here, gbm) format from the EGL config.
         const bool queryFromEgl = !m_output.drm_format_requested_by_user;
-
-        int int_rawGeometryWidth = rawGeometry().width();
-        int int_rawGeometryHeight = rawGeometry().height();
-        int int_modifiersSize = m_modifiers.size();
-        uint32_t uint_rawGeometryWidth = int_rawGeometryWidth < 0 ? 0 : (uint32_t) int_rawGeometryWidth;
-        uint32_t uint_rawGeometryHeight = int_rawGeometryHeight < 0 ? 0 : (uint32_t) int_rawGeometryHeight;
-        uint32_t uint_modifiersSize = int_modifiersSize < 0 ? 0 : (uint32_t) int_modifiersSize;
-
-        if (queryFromEgl) {
-            EGLint native_format = -1;
-            EGLBoolean success = eglGetConfigAttrib(display(), eglConfig, EGL_NATIVE_VISUAL_ID, &native_format);
-            qCDebug(qLcStarfishDebug) << "Got native format" << hex << native_format << dec
-                                      << "from eglGetConfigAttrib() with return code" << bool(success);
-
-            if (success) {
-                uint32_t uint_nativeFormat = native_format < 0 ? 0 : (uint32_t) native_format;
-                if (m_modifiers.size()) {
-                    m_gbm_surface = gbm_surface_create_with_modifiers(gbmDevice,
-                                                                      uint_rawGeometryWidth,
-                                                                      uint_rawGeometryHeight,
-                                                                      uint_nativeFormat,
-                                                                      m_modifiers.data(), uint_modifiersSize);
-                } else {
-                    m_gbm_surface = gbm_surface_create(gbmDevice,
-                                                       uint_rawGeometryWidth,
-                                                       uint_rawGeometryHeight,
-                                                       uint_nativeFormat,
-                                                       GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
-                }
-                if (m_gbm_surface)
-                    m_output.drm_format = gbmFormatToDrmFormat(uint_nativeFormat);
-            }
+        if (queryFromEgl && success) {
+            m_gbm_surface = createGbmSurface(gbmDevice, rawGeometry(), native_format, m_modifiers);
+            if (m_gbm_surface)
+                m_output.drm_format = gbmFormatToDrmFormat(native_format);
+            else // 'createGbmSurface' failed
+                qCDebug(qLcStarfishDebug, "Could not create surface with native format %x", native_format);
         }
 
         // Fallback for older drivers, and when "format" is explicitly specified
         // in the output config. (not guaranteed that the requested format works
         // of course, but do what we are told to)
         if (!m_gbm_surface) {
-            uint32_t gbmFormat = drmFormatToGbmFormat(m_output.drm_format);
-            if (queryFromEgl)
-                qCDebug(qLcStarfishDebug, "Could not create surface with EGL_NATIVE_VISUAL_ID, falling back to format %x", gbmFormat);
+            uint32_t config_format = drmFormatToGbmFormat(m_output.drm_format);
 
-            if (m_modifiers.size()) {
-                m_gbm_surface = gbm_surface_create_with_modifiers(gbmDevice,
-                                                                  uint_rawGeometryWidth,
-                                                                  uint_rawGeometryHeight,
-                                                                  gbmFormat,
-                                                                  m_modifiers.data(), uint_modifiersSize);
-            } else {
-                m_gbm_surface = gbm_surface_create(gbmDevice,
-                                                   uint_rawGeometryWidth,
-                                                   uint_rawGeometryHeight,
-                                                   gbmFormat,
-                                                   GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
+            // GBM format fallback for RTK SoCs (supporting only "argb8888", but not "abgr8888", on Mesa EGL):
+            // if EGL_NATIVE_VISUAL_ID of the currently chosen EGL config for EGL window is "argb8888",
+            // GBM format of the surface created below should be set to "argb8888", even though "m_output.drm_format"
+            // has been configured to "abgr8888" specifically (refer to [KTASKWBS-29529]).
+            if (config_format != native_format) {
+                qInfo() << "EGL_NATIVE_VISUAL_ID:" << hex << native_format << "is different from the configured DRM format:" << hex << config_format;
+                if (native_format == GBM_FORMAT_ARGB8888) {
+                    config_format = native_format;
+                    qInfo() << "GBM format:" << hex << native_format << "is used instead of the conigured DRM format.";
+                }
             }
+
+            m_gbm_surface = createGbmSurface(gbmDevice, rawGeometry(), config_format, m_modifiers);
         }
     }
     return m_gbm_surface; // not owned, gets destroyed in QEglFSKmsGbmIntegration::destroyNativeWindow() via QEglFSKmsGbmWindow::invalidateSurface()
