@@ -54,7 +54,7 @@ enum OutputConfiguration {
     OutputConfigModeline
 };
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)) || (defined(HAS_PAGEFLIPPED))
 static void(*page_flip_notifier)(void* key, unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec) = nullptr;
 #else
 static void(*page_flip_notifier)(void* key) = nullptr;
@@ -1028,14 +1028,14 @@ QRect EglFSStarfishScreen::applicationWindowGeometry() const
 
 void EglFSStarfishScreen::updateFlipStatus()
 {
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0)) && (!defined(HAS_PAGEFLIPPED))
     if (page_flip_notifier)
             (*page_flip_notifier)(this);
 #endif
     QEglFSKmsGbmScreen::updateFlipStatus();
 }
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)) || (defined(HAS_PAGEFLIPPED))
 void EglFSStarfishScreen::pageFlipped(unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec)
 {
     if (page_flip_notifier)
@@ -1045,8 +1045,10 @@ void EglFSStarfishScreen::pageFlipped(unsigned int sequence, unsigned int tv_sec
 
 void EglFSStarfishScreen::flip()
 {
-    if (!m_visible)
+    if (!m_visible) {
+        updateFlipStatus();
         return;
+    }
 
     // For headless screen just return silently. It is not necessarily an error
     // to end up here, so show no warnings.
