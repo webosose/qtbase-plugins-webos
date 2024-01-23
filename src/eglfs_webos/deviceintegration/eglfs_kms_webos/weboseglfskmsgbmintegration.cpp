@@ -39,7 +39,7 @@
 
 static QMutex s_frameBufferMutex;
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)) || (defined(HAS_PAGEFLIPPED))
 static void(*page_flip_notifier)(void* key, unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec) = nullptr;
 #else
 static void(*page_flip_notifier)(void* key) = nullptr;
@@ -386,7 +386,7 @@ QRect WebOSEglFSKmsGbmScreen::applicationWindowGeometry() const
 
 void WebOSEglFSKmsGbmScreen::updateFlipStatus()
 {
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0)) && (!defined(HAS_PAGEFLIPPED))
     if (page_flip_notifier)
             (*page_flip_notifier)(this);
 #endif
@@ -415,7 +415,7 @@ void WebOSEglFSKmsGbmScreen::updateFlipStatus()
 #endif
 }
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)) || (defined(HAS_PAGEFLIPPED))
 void WebOSEglFSKmsGbmScreen::pageFlipped(unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec)
 {
     if (page_flip_notifier)

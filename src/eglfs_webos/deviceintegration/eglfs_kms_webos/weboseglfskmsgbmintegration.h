@@ -127,7 +127,7 @@ public:
 
     void updateFlipStatus() override;
     void flip() override;
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)) || (defined(HAS_PAGEFLIPPED))
     void pageFlipped(unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec) override;
 #endif
 #ifdef IM_ENABLE
