@@ -1309,17 +1309,22 @@ QEglFSKmsGbmScreen::FrameBuffer *EglFSStarfishScreen::framebufferForBufferObject
     uint32_t offsets[4] = { 0 };
 
     // TODO: need to handle cases does not have modifiers
+    bool hasModifier = false;
     uint64_t modifiers[4] = { 0 };
-    for (int i = 0; i < ARRAY_LENGTH(modifiers) && handles[i]; i++)
-        modifiers[i] = gbm_bo_get_modifier(bo);
+    if (m_modifiers.size()) {
+        hasModifier = true;
+        for (int i = 0; i < ARRAY_LENGTH(modifiers) && handles[i]; i++)
+            modifiers[i] = gbm_bo_get_modifier(bo);
+    }
 
     uint32_t pixelFormat = gbmFormatToDrmFormat(gbm_bo_get_format(bo));
 
     QScopedPointer<FrameBuffer> fb(new FrameBuffer);
-    qCDebug(qLcStarfishDebug, "Adding FB, size %ux%u, DRM format 0x%x", width, height, pixelFormat);
+    qCDebug(qLcStarfishDebug, "Adding FB, size %ux%u, DRM format 0x%x, modifier 0x%llx", width, height, pixelFormat, modifiers[0]);
 
-    int ret = drmModeAddFB2WithModifiers(device()->fd(), width, height, pixelFormat,
-                                         handles, strides, offsets, modifiers, &fb->fb, DRM_MODE_FB_MODIFIERS);
+    int ret = hasModifier 
+        ? drmModeAddFB2WithModifiers(device()->fd(), width, height, pixelFormat, handles, strides, offsets, modifiers, &fb->fb, DRM_MODE_FB_MODIFIERS)
+        : drmModeAddFB2(device()->fd(), width, height, pixelFormat, handles, strides, offsets, &fb->fb, 0);
 
     if (ret) {
         qWarning("Failed to create KMS FB!");
