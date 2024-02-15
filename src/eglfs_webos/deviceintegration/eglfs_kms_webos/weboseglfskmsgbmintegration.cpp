@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2023 LG Electronics, Inc.
+// Copyright (c) 2020-2024 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -134,6 +134,14 @@ void *WebOSEglFSKmsGbmIntegration::nativeResourceForIntegration(const QByteArray
     if (name == QByteArrayLiteral("dri_address_of_page_flip_notifier") && m_device)
         // return pointer to function "page_flip_notifier"
         return (void*)&page_flip_notifier;
+#endif
+
+#ifdef IM_ENABLE
+    QByteArray lowerCaseResource = name.toLower();
+
+    void *input_interface = QStarfishInputManager::instance()->nativeResourceForIntegration(lowerCaseResource);
+    if (input_interface)
+        return input_interface;
 #endif
 
     return QEglFSKmsIntegration::nativeResourceForIntegration(name);
