@@ -370,6 +370,37 @@ QKmsDevice *EglFSStarfishIntegration::createDevice()
     return new EglFSStarfishDevice(screenConfig(), path);
 }
 
+void *EglFSStarfishIntegration::nativeResourceForScreen(const QByteArray &resource, QScreen *screen)
+{
+    QByteArray lowerCaseResource = resource.toLower();
+
+    void *input_interface = QStarfishInputManager::instance()->nativeResourceForScreen(lowerCaseResource, screen);
+    if (input_interface)
+        return input_interface;
+
+    return QEglFSKmsGbmIntegration::nativeResourceForScreen(resource, screen);
+}
+
+#ifdef CURSOR_OPENGL
+#include <qstarfishimcursor.h>
+
+// Use 'extern' instead of 'Q_DECL_IMPORT' here, because 'Q_DECL_IMPORT' has not external linkage in the Qt plugin.
+//extern bool starfish_im_cursor_cursorNeedUpdate;
+void EglFSStarfishIntegration::waitForVSync(QPlatformSurface *surface) const
+{
+    //starfish_im_cursor_cursorNeedUpdate = false;
+    if (auto *window = static_cast<QPlatformWindow *>(surface)) {
+        if (auto screen = window->screen()) {
+            if (auto cursor = static_cast<QStarfishIMCursor *>(screen->cursor())) {
+                cursor->paint();
+            }
+        }
+    }
+
+    QEglFSKmsIntegration::waitForVSync(surface);
+}
+#endif // CURSOR_OPENGL
+
 static inline uint32_t *
 formats_ptr(struct drm_format_modifier_blob *blob)
 {
@@ -464,17 +495,6 @@ QPlatformScreen * EglFSStarfishDevice::createScreen(const QKmsOutput &output)
 #endif
 
     return screen;
-}
-
-void *EglFSStarfishIntegration::nativeResourceForScreen(const QByteArray &resource, QScreen *screen)
-{
-    QByteArray lowerCaseResource = resource.toLower();
-
-    void *input_interface = QStarfishInputManager::instance()->nativeResourceForScreen(lowerCaseResource, screen);
-    if (input_interface)
-        return input_interface;
-
-    return QEglFSKmsGbmIntegration::nativeResourceForScreen(resource, screen);
 }
 
 // from luna-surfacemanager
@@ -862,7 +882,7 @@ QPlatformScreen *EglFSStarfishDevice::createStarfishScreenForConnector(drmModeRe
 EglFSStarfishScreen::EglFSStarfishScreen(QEglFSKmsDevice *device, const QKmsOutput &output, bool headless, QVector<uint64_t> modifiers)
     : QEglFSKmsGbmScreen(device, output, headless)
 #ifdef IM_ENABLE
-    , m_cursor(new QStarfishIMCursor(device->fd(), output.crtc_id))
+    , m_cursor(new QStarfishIMCursor(device->fd(), output.crtc_id, this))
 #endif
     , m_dpr(-1.0)
     , m_modifiers(modifiers)

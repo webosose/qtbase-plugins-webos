@@ -197,6 +197,23 @@ void WebOSEglFSKmsGbmIntegration::setOverlayBufferObject(const QScreen *screen, 
 }
 #endif
 
+#ifdef CURSOR_OPENGL
+#include <qstarfishimcursor.h>
+
+void WebOSEglFSKmsGbmIntegration::waitForVSync(QPlatformSurface *surface) const
+{
+    if (auto *window = static_cast<QPlatformWindow *>(surface)) {
+        if (auto screen = window->screen()) {
+            if (auto cursor = static_cast<QStarfishIMCursor *>(screen->cursor())) {
+                cursor->paint();
+            }
+        }
+    }
+
+    QEglFSKmsIntegration::waitForVSync(surface);
+}
+#endif // CURSOR_OPENGL
+
 QPlatformScreen * WebOSEglFSKmsGbmDevice::createScreen(const QKmsOutput &output)
 {
     QEglFSKmsGbmScreen *screen = new WebOSEglFSKmsGbmScreen(this, output, false);
@@ -308,7 +325,7 @@ WebOSEglFSKmsGbmScreen::WebOSEglFSKmsGbmScreen(QEglFSKmsDevice *device, const QK
     : QEglFSKmsGbmScreen(device, output, headless)
     , m_dpr(-1.0)
 #ifdef IM_ENABLE
-    , m_cursor(new QStarfishIMCursor(device->fd(), output.crtc_id))
+    , m_cursor(new QStarfishIMCursor(device->fd(), output.crtc_id, this))
 #endif
 {
 #ifdef PLANE_COMPOSITION

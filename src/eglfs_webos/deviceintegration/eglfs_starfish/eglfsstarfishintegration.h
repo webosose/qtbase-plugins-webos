@@ -48,6 +48,9 @@ public:
     QKmsScreenConfig *createScreenConfig() override;
 
     void screenInit() override;
+#ifdef CURSOR_OPENGL
+    void waitForVSync(QPlatformSurface *surface) const override;
+#endif
 
     QFunctionPointer platformFunction(const QByteArray &function) const override;
     void *nativeResourceForIntegration(const QByteArray &name) override;

@@ -68,4 +68,6 @@ inputmanager {
 
     CONFIG += link_pkgconfig
     PKGCONFIG = glib-2.0 luna-service2
+
+    equals(CURSOR_BACKEND, "opengl"): DEFINES += CURSOR_OPENGL
 }

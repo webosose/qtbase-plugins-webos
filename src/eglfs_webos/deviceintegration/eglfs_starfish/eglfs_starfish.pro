@@ -59,6 +59,8 @@ inputmanager {
         # Multiple input support
         DEFINES += MULTIINPUT_SUPPORT
     }
+
+    equals(CURSOR_BACKEND, "opengl"): DEFINES += CURSOR_OPENGL
 } else {
     # NOTE: Recently this case wasn't tested.
 }
