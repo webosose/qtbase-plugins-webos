@@ -42,6 +42,7 @@ public:
     QKmsScreenConfig *createScreenConfig() override;
 
     void screenInit() override;
+    QSurfaceFormat surfaceFormatFor(const QSurfaceFormat &inputFormat) const override;
 #ifdef CURSOR_OPENGL
     void waitForVSync(QPlatformSurface *surface) const override;
 #endif
@@ -139,7 +140,12 @@ public:
     }
 #endif
 
-#ifdef PLANE_COMPOSITION
+
+#ifndef PLANE_COMPOSITION
+#ifdef SECURE_RENDERING
+    uint32_t gbmFlags() override { return GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING | GBM_BO_USE_PROTECTED; }
+#endif
+#else
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     uint32_t gbmFlags() override;
 #endif

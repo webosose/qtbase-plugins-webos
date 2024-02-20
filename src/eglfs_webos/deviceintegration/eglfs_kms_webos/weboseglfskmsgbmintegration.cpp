@@ -106,6 +106,15 @@ QKmsScreenConfig *WebOSEglFSKmsGbmIntegration::createScreenConfig()
     return screenConfig;
 }
 
+QSurfaceFormat WebOSEglFSKmsGbmIntegration::surfaceFormatFor(const QSurfaceFormat &inputFormat) const
+{
+    QSurfaceFormat format(QEglFSKmsIntegration::surfaceFormatFor(inputFormat));
+#ifdef SECURE_RENDERING
+    format.setOption(QSurfaceFormat::ProtectedContent);
+#endif
+    return format;
+}
+
 void WebOSEglFSKmsGbmIntegration::screenInit()
 {
     QEglFSKmsGbmIntegration::screenInit();

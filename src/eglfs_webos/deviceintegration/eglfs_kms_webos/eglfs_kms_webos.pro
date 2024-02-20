@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023 LG Electronics, Inc.
+# Copyright (c) 2020-2024 LG Electronics, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -70,4 +70,8 @@ inputmanager {
     PKGCONFIG = glib-2.0 luna-service2
 
     equals(CURSOR_BACKEND, "opengl"): DEFINES += CURSOR_OPENGL
+}
+
+secure-rendering {
+    DEFINES += SECURE_RENDERING
 }
