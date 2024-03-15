@@ -168,6 +168,7 @@ public:
     void snapshotDone();
 
     bool hasSnapshotDone() const;
+    bool isSnapshotMaking() const;
 
 private:
     qreal m_dpr;

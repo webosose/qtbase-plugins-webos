@@ -1547,6 +1547,15 @@ bool EglFSStarfishScreen::hasSnapshotDone() const
 #endif
 }
 
+bool EglFSStarfishScreen::isSnapshotMaking() const
+{
+#ifdef SNAPSHOT_BOOT
+    return m_snapshotOperator->snapshotMode() == QStarfishSnapshotOperator::SnapshotMode_Making;
+#else
+    return false;
+#endif
+}
+
 EglFSStarfishContext::EglFSStarfishContext(const QSurfaceFormat &format, QPlatformOpenGLContext *share, EGLDisplay display,
                                            EGLConfig *config, const QVariant &nativeHandle)
     : QEglFSContext(format, share, display, config, nativeHandle)

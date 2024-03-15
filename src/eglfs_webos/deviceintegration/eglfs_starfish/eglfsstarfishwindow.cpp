@@ -108,7 +108,7 @@ void EglFSStarfishWindow::requestActivateWindow()
 void EglFSStarfishWindow::snapshotReady()
 {
     EglFSStarfishScreen *screen = static_cast<EglFSStarfishScreen*>(this->screen());
-    if (screen && screen->primary()) {
+    if (screen && screen->primary() && screen->isSnapshotMaking()) {
         qInfo() << "Disable EGLSufface to block rendering"  << m_surface << "->" << "0x0" << this;
         m_surface = nullptr;
         screen->snapshotReady();
