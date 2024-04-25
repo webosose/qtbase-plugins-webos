@@ -37,6 +37,10 @@
 #include "qstarfishinputmanager.h"
 #endif
 
+#ifdef SECURE_RENDERING
+#include <QtEglFSDeviceIntegration/private/qeglfshooks_p.h>
+#endif
+
 static QMutex s_frameBufferMutex;
 
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)) || (defined(HAS_PAGEFLIPPED))
@@ -78,6 +82,7 @@ WebOSEglFSKmsGbmIntegration::WebOSEglFSKmsGbmIntegration()
     : QEglFSKmsGbmIntegration()
 {
     static QByteArray json = qgetenv("QT_QPA_EGLFS_CONFIG");
+    m_protected = qgetenv("WEBOS_COMPOSITOR_PROTECTED_CONTENT").toInt() == 1;
 
     if (!json.isEmpty()) {
         QFile file(QString::fromUtf8(json));
@@ -110,7 +115,8 @@ QSurfaceFormat WebOSEglFSKmsGbmIntegration::surfaceFormatFor(const QSurfaceForma
 {
     QSurfaceFormat format(QEglFSKmsIntegration::surfaceFormatFor(inputFormat));
 #ifdef SECURE_RENDERING
-    format.setOption(QSurfaceFormat::ProtectedContent);
+    if (isProtected())
+        format.setOption(QSurfaceFormat::ProtectedContent);
 #endif
     return format;
 }
@@ -563,7 +569,18 @@ void WebOSEglFSKmsGbmScreen::flip()
     QEglFSKmsGbmScreen::flip();
 }
 
-#ifdef PLANE_COMPOSITION
+#ifndef PLANE_COMPOSITION
+#ifdef SECURE_RENDERING
+uint32_t WebOSEglFSKmsGbmScreen::gbmFlags()
+{
+    uint32_t defaultFlags = GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING;
+    WebOSEglFSKmsGbmIntegration* integration = static_cast<WebOSEglFSKmsGbmIntegration*>(qt_egl_device_integration());
+    if (integration && integration->isProtected())
+        defaultFlags |= GBM_BO_USE_PROTECTED;
+    return defaultFlags;
+}
+#endif
+#else
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 uint32_t WebOSEglFSKmsGbmScreen::gbmFlags()
 {
@@ -773,4 +790,4 @@ void WebOSEglFSKmsGbmScreen::clearBufferObject(uint32_t zpos)
 }
 #endif
 
-#endif
+#endif //PLANE_COMPOSITION

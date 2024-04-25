@@ -59,9 +59,10 @@ public:
 #ifdef PLANE_COMPOSITION
     static void setOverlayBufferObject(const QScreen *screen, void *bo, QRectF rect, uint32_t zpos);
 #endif
-
+    bool isProtected() const { return m_protected; }
 private:
     QJsonObject m_configJson;
+    bool m_protected = false;
 };
 
 #ifdef PLANE_COMPOSITION
@@ -140,10 +141,9 @@ public:
     }
 #endif
 
-
 #ifndef PLANE_COMPOSITION
 #ifdef SECURE_RENDERING
-    uint32_t gbmFlags() override { return GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING | GBM_BO_USE_PROTECTED; }
+    uint32_t gbmFlags() override;
 #endif
 #else
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
