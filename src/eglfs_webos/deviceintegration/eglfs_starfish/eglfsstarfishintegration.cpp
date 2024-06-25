@@ -1035,8 +1035,7 @@ gbm_surface *EglFSStarfishScreen::createSurface(EGLConfig eglConfig)
     qInfo() << "#### EglFSStarfishScreen::createSurface";
     // Copied from QEglFSKmsGbmScreen::createSurface
     if (!m_gbm_surface) {
-        qInfo() << "Creating gbm_surface for screen" << name()
-              << "with modifiers" << m_modifiers;
+        qInfo() << "Creating gbm_surface for screen" << name() << "with modifiers" << hex << m_modifiers;
 
         EGLint native_format = -1;
         EGLBoolean success = eglGetConfigAttrib(display(), eglConfig, EGL_NATIVE_VISUAL_ID, &native_format);
@@ -1059,21 +1058,8 @@ gbm_surface *EglFSStarfishScreen::createSurface(EGLConfig eglConfig)
         // in the output config. (not guaranteed that the requested format works
         // of course, but do what we are told to)
         if (!m_gbm_surface) {
-            uint32_t config_format = drmFormatToGbmFormat(m_output.drm_format);
-
-            // GBM format fallback for RTK SoCs (supporting only "argb8888", but not "abgr8888", on Mesa EGL):
-            // if EGL_NATIVE_VISUAL_ID of the currently chosen EGL config for EGL window is "argb8888",
-            // GBM format of the surface created below should be set to "argb8888", even though "m_output.drm_format"
-            // has been configured to "abgr8888" specifically (refer to [KTASKWBS-29529]).
-            if (config_format != native_format) {
-                qInfo() << "EGL_NATIVE_VISUAL_ID:" << hex << native_format << "is different from the configured DRM format:" << hex << config_format;
-                if (native_format == GBM_FORMAT_ARGB8888) {
-                    config_format = native_format;
-                    qInfo() << "GBM format:" << hex << native_format << "is used instead of the conigured DRM format.";
-                }
-            }
-
-            m_gbm_surface = createGbmSurface(gbmDevice, rawGeometry(), config_format, m_modifiers);
+            auto gbm_format = drmFormatToGbmFormat(m_output.drm_format);
+            m_gbm_surface = createGbmSurface(gbmDevice, rawGeometry(), static_cast<EGLint>(gbm_format), m_modifiers);
         }
     }
     return m_gbm_surface; // not owned, gets destroyed in QEglFSKmsGbmIntegration::destroyNativeWindow() via QEglFSKmsGbmWindow::invalidateSurface()
