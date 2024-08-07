@@ -75,11 +75,5 @@ void EglFSStarfishWindow::setGeometry(const QRect &r)
 void EglFSStarfishWindow::requestActivateWindow()
 {
     QEglFSKmsGbmWindow::requestActivateWindow();
-
-#ifdef IM_ENABLE
-    //This sequence makes sure that Top Window get focus
-    //so that it can receive key event.
-    QStarfishInputManager::instance()->startInputService();
-#endif
 }
 

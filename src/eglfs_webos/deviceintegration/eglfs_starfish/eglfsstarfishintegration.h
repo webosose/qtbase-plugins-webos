@@ -62,6 +62,7 @@ public:
     void updateScreenVisibleDirectly(EglFSStarfishScreen *screen, bool visible, const QString& policy);
     void onPowerStateChanged(const QStarfishPowerDBridge::State& state);
 
+    static void onSnapshotBootDone();
 private:
     class EglFSStarfishIntegrationPrivate* d_ptr;
     Q_DECLARE_PRIVATE(EglFSStarfishIntegration);
@@ -119,6 +120,7 @@ public:
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)) || (defined(HAS_PAGEFLIPPED))
     void pageFlipped(unsigned int sequence, unsigned int tv_sec, unsigned int tv_usec) override;
 #endif
+    FrameBuffer *framebufferForBufferObject(gbm_bo *bo);
 
     QRect rawGeometry() const override
     {
