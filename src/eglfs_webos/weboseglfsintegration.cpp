@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2023 LG Electronics, Inc.
+// Copyright (c) 2020-2024 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -112,6 +112,7 @@ WebOSEglFSIntegration::WebOSEglFSIntegration()
 #endif
 }
 
+#if defined(THREADED_OPENGL_DISABLE)
 bool WebOSEglFSIntegration::hasCapability(Capability capability) const
 {
     // Disabled Threading as it seems to cause problems -> TODO investigate
@@ -120,6 +121,7 @@ bool WebOSEglFSIntegration::hasCapability(Capability capability) const
         default: return QEglFSIntegration::hasCapability(capability);
     }
 }
+#endif
 
 #if QT_CONFIG(evdev)
 QString WebOSEglFSIntegration::initializeDevices(QStringList devices)

@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2023 LG Electronics, Inc.
+// Copyright (c) 2020-2024 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -60,7 +60,10 @@ class WebOSEglFSIntegration : public QEglFSIntegration
     Q_OBJECT
 public:
     WebOSEglFSIntegration();
+
+#if defined(THREADED_OPENGL_DISABLE)
     bool hasCapability(Capability capability) const override;
+#endif
 
 #if QT_CONFIG(evdev)
     void createInputHandlers() override;
