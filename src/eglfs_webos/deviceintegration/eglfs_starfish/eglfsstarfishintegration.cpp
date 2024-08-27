@@ -681,7 +681,7 @@ void EglFSStarfishDevice::createStarfishScreens()
     OutputConfiguration configuration;
     QSize configurationSize;
     int configurationRefresh = 0;
-    drmModeModeInfo configurationModeline;
+    drmModeModeInfo configurationModeline = {};
 
     // default to the preferred mode unless overridden in the config
     EglFSStarfishScreenConfig* dp = static_cast<EglFSStarfishScreenConfig*>(m_screenConfig);
@@ -1184,20 +1184,15 @@ void EglFSStarfishScreen::flip()
     // system("echo \'[surface-manager] flip: starting...\' >> /dev/kmsg");
     // system("echo \'[surface-manager] flip: starting...\' >> /dev/lg/logm0");
 
-    auto gbmRelease = qScopeGuard([this]{
-        m_flipPending = false;
-        gbm_surface_release_buffer(m_gbm_surface, m_gbm_bo_next);
-        m_gbm_bo_next = nullptr;
-    });
-
     FrameBuffer *fb = framebufferForBufferObject(m_gbm_bo_next);
+    QKmsOutput &op(output());
+
     if (!fb) {
         qWarning("FrameBuffer not available. Cannot flip");
-        return;
+        goto Error;
     }
     ensureModeSet(fb->fb);
 
-    QKmsOutput &op(output());
     if (!op.eglfs_plane)
         qFatal("op.eglfs_plane should not be nullptr");
 
@@ -1255,13 +1250,18 @@ void EglFSStarfishScreen::flip()
     }
 #if QT_CONFIG(drm_atomic)
     if (!device()->threadLocalAtomicCommit(this))
-        return;
+        goto Error;
 #endif
     // system("echo \'[surface-manager] flip: done(threadLocalAtomicCommit)\' >> /dev/kmsg");
     // system("echo \'[surface-manager] flip: done(threadLocalAtomicCommit)\' >> /dev/lg/logm0");
     qCDebug(qLcStarfishDebug) << "[flip] EglFSStarfishScreen::flip threadLocalAtomicCommit done" << name();
+    return;
 
-    gbmRelease.dismiss();
+Error:
+    m_flipPending = false;
+    gbm_surface_release_buffer(m_gbm_surface, m_gbm_bo_next);
+    m_gbm_bo_next = nullptr;
+    return;
 }
 
 QEglFSKmsGbmScreen::FrameBuffer *EglFSStarfishScreen::framebufferForBufferObject(gbm_bo *bo)
