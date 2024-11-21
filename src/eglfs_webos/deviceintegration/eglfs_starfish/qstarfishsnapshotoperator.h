@@ -42,10 +42,10 @@ public:
     Q_FLAGS(SnapshotProgressive);
 
     struct SnapshotProfiling {
-        qint64 set_elapsed_ms;
-        qint64 render_elapsed_ms;
-        qint64 wait_elapsed_ms;
-        qint64 clear_elapsed_ms;
+        qint64 set_elapsed_ms = 0;
+        qint64 render_elapsed_ms = 0;
+        qint64 wait_elapsed_ms = 0;
+        qint64 clear_elapsed_ms = 0;
     };
 
 public:

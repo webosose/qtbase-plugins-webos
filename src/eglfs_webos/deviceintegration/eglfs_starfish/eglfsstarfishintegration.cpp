@@ -893,8 +893,10 @@ QPlatformScreen *EglFSStarfishDevice::createStarfishScreenForConnector(drmModeRe
                          << "for output" << connectorName;
 #endif
 
-    if (crtc > UINT_MAX)
+    // Refer to https://gitlab.freedesktop.org/mesa/drm/-/blob/main/xf86drmMode.h
+    if (crtc >= resources->count_crtcs)
         return nullptr;
+
     const uint32_t crtc_id = resources->crtcs[crtc];
     // TODO: implement cloneSource if necessary
     QString cloneSource;
